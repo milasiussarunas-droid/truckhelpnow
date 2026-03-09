@@ -9,6 +9,7 @@ Truck repair and diagnostic help for drivers.
 2. Copy `.env.example` to `.env.local` and add your credentials:
    - `NEXT_PUBLIC_SUPABASE_URL` — Project URL (Settings → API)
    - `SUPABASE_SERVICE_ROLE_KEY` — Service role key (Settings → API, under "Project API keys")
+   - `OPENAI_API_KEY` — OpenAI API key from [platform.openai.com/api-keys](https://platform.openai.com/api-keys) (required for the chat diagnostic assistant)
 
 3. Run the migration in Supabase:
    - Open **SQL Editor** in your Supabase dashboard
