@@ -7,12 +7,29 @@ const systemPrompt = `You are a truck diagnostic assistant for TruckHelpNow. Hel
 - Symptoms and fault codes (SPN/FMI when available)
 Keep answers concise and practical. Always recommend professional help for brakes, steering, overheating, fuel leaks, or fire risk. This is informational guidance only.`
 
+function getOpenAIKey(): string | null {
+  const key = process.env.OPENAI_API_KEY?.trim()
+  if (!key) return null
+  // Reject placeholders / truncated keys (real keys are long)
+  if (
+    key.length < 30 ||
+    key === 'sk-proj-' ||
+    (key.startsWith('sk-proj-') && key.length < 40)
+  ) {
+    return null
+  }
+  return key
+}
+
 export async function POST(req: Request) {
   try {
-    const apiKey = process.env.OPENAI_API_KEY
+    const apiKey = getOpenAIKey()
     if (!apiKey) {
       return NextResponse.json(
-        { error: 'OpenAI API key not configured' },
+        {
+          error:
+            'OpenAI API key is missing or invalid. Add a valid key to .env.local as OPENAI_API_KEY=sk-... and restart the dev server. Get a key at https://platform.openai.com/api-keys',
+        },
         { status: 500 }
       )
     }
