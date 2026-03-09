@@ -1,6 +1,26 @@
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  name: "TruckHelpNow",
+  description:
+    "AI-powered truck repair and diagnostic assistant. Turn symptoms and fault codes (SPN/FMI) into clear, safety-minded next steps for drivers and dispatchers.",
+  url: "https://truckhelpnow.com",
+  applicationCategory: "UtilitiesApplication",
+  operatingSystem: "Any",
+  offers: {
+    "@type": "Offer",
+    price: "0",
+    priceCurrency: "USD",
+  },
+};
+
 export default function Home() {
   return (
     <main className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-black text-slate-100">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       {/* Top nav */}
       <header className="border-b border-white/10">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 md:px-6">
