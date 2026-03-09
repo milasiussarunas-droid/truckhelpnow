@@ -1,0 +1,179 @@
+---
+description: Rules and architecture guidance for TruckHelpNow
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# TruckHelpNow Project Rules
+
+## Project Purpose
+TruckHelpNow is an AI-powered truck repair and diagnostic assistant for drivers.
+The product should help users:
+- describe truck problems
+- paste fault codes (SPN/FMI)
+- receive structured, safe diagnostic guidance
+- optionally escalate to a human mechanic
+
+## Current Tech Stack
+- Next.js App Router
+- TypeScript
+- Tailwind CSS
+- Supabase
+- OpenAI API
+- Vercel
+
+## Architecture Rules
+
+### Next.js
+- Use App Router conventions.
+- Route handlers must live in `app/api/*/route.ts`.
+- Pages must live in `app/.../page.tsx`.
+- Do not introduce Pages Router unless explicitly requested.
+
+### Supabase
+- Browser-safe client must live in `lib/supabase.ts`.
+- Server-side admin client must live in `lib/supabase-server.ts`.
+- Never expose `SUPABASE_SERVICE_ROLE_KEY` to the frontend.
+- Never put service-role logic inside client components.
+- Use Supabase tables already defined in the project unless explicitly instructed to change schema.
+
+### Environment Variables
+Never hardcode secrets.
+Always use environment variables for:
+- OPENAI_API_KEY
+- NEXT_PUBLIC_SUPABASE_URL
+- NEXT_PUBLIC_SUPABASE_ANON_KEY
+- SUPABASE_SERVICE_ROLE_KEY
+
+Do not place secrets in client-side code.
+Do not commit secrets into the repository.
+
+## Existing Data Model
+
+### cases
+Stores diagnostic sessions.
+
+Expected fields:
+- id
+- created_at
+- truck_make
+- truck_model
+- truck_year
+- engine
+- status
+
+### messages
+Stores chat history.
+
+Expected fields:
+- id
+- case_id
+- role
+- content
+- created_at
+
+### handoff_requests
+Stores human mechanic support requests.
+
+Expected fields:
+- id
+- case_id
+- status
+- created_at
+
+## AI Product Behavior Rules
+TruckHelpNow is not a generic chatbot.
+It must behave like a cautious truck diagnostic assistant.
+
+### Safety Rules
+When symptoms suggest any of the following:
+- brake failure
+- steering failure
+- severe overheating
+- fuel leak
+- fire risk
+- loss of air pressure
+- wheel-end failure
+
+the assistant must clearly advise the user to stop safely and seek professional service.
+
+### Diagnostic Style
+Responses should:
+- be structured
+- be practical
+- prioritize low-risk checks first
+- explain likely causes with reasoning
+- include next steps
+- ask a small number of high-value clarifying questions
+
+Avoid vague generic assistant language.
+
+### Tone
+- clear
+- direct
+- useful
+- calm
+- not overly verbose
+- not robotic
+- not overly corporate
+
+## UI Rules
+TruckHelpNow is mobile-first.
+Design should prioritize:
+- large tap targets
+- clean spacing
+- readable cards
+- obvious status/error states
+- fast user understanding
+
+When improving UI:
+- prefer simple Tailwind-based components
+- avoid unnecessary dependencies unless clearly beneficial
+- keep the interface practical and clean
+
+## Coding Rules
+- Use TypeScript.
+- Prefer small, focused changes.
+- Avoid large refactors unless explicitly requested.
+- Preserve existing architecture unless there is a strong reason to change it.
+- Explain file changes clearly when making multi-file edits.
+- Do not rename files or move major folders unless explicitly requested.
+
+## API Rules
+- Mutations should use POST unless there is a clear reason otherwise.
+- Return JSON responses consistently.
+- Validate required request fields.
+- Fail with clear error messages instead of silent failures.
+- Preserve existing API route patterns.
+
+## Cost Optimization Rules
+- Prefer keeping OpenAI costs low.
+- Optimize depth via prompting and structure before changing to more expensive models.
+- Keep `gpt-4.1-mini` as the default unless explicitly told to upgrade.
+- When adding image features later, prefer browser-side image compression before upload.
+
+## What Cursor Should Avoid
+- Do not expose secrets
+- Do not move service-role logic into client code
+- Do not replace working Supabase clients
+- Do not rewrite the whole project for style only
+- Do not add unnecessary libraries
+- Do not turn TruckHelpNow into a generic chatbot UI
+
+## Good Cursor Task Pattern
+When implementing features, prefer:
+1. small schema-safe changes
+2. clean UI updates
+3. preserving existing API behavior
+4. incremental improvements over rewrites
+
+## Near-Term Product Priorities
+The most likely next features are:
+1. truck info capture at case start
+2. request mechanic button / handoff flow
+3. case summary generation
+4. image upload for diagnostics
+5. similar-case retrieval later
+
+When assisting with these features, keep existing architecture and product direction intact.
