@@ -2,16 +2,34 @@
 
 import { useEffect, useRef, useState } from 'react'
 
+type DetectedCodeItem = {
+  raw_code: string
+  normalized_code: string
+  code_type: string
+  confidence: 'low' | 'medium' | 'high'
+  interpretation: string
+}
+
 type DiagnosticStructured = {
   image_quality: string
-  codes_detected: string[]
+  visible_text: string[]
+  uncertain_text: string[]
+  detected_codes: DetectedCodeItem[]
   warnings_detected: string[]
-  likely_issue_summary: string
-  recommended_checks: string[]
+  fault_timestamps: string[]
+  fault_pattern: 'intermittent' | 'recurring' | 'persistent' | 'unclear'
+  primary_systems_involved: string[]
+  most_likely_problem: string
+  possible_causes: string[]
+  recommended_checks_immediate: string[]
+  recommended_checks_shop_level: string[]
+  driver_guidance: string
+  mechanic_guidance: string
+  missing_information: string[]
+  can_driver_continue: 'yes' | 'maybe' | 'no'
   safety_level: 'low' | 'medium' | 'high'
   safety_message: string
-  confidence: 'low' | 'medium' | 'high'
-  note: string
+  overall_confidence: 'low' | 'medium' | 'high'
 }
 
 /** Message history entry. Same shape for text-only and image analysis: role + content always set; structured only when backend returns dashboard analysis. */
@@ -56,12 +74,45 @@ function hasStructured(data: unknown): data is { structured: DiagnosticStructure
   if (s === null || typeof s !== 'object' || Array.isArray(s)) return false
   const o = s as Record<string, unknown>
   return (
-    typeof o.likely_issue_summary === 'string' &&
-    Array.isArray(o.codes_detected) &&
+    typeof o.most_likely_problem === 'string' &&
+    Array.isArray(o.detected_codes) &&
     Array.isArray(o.warnings_detected) &&
-    Array.isArray(o.recommended_checks) &&
-    typeof o.safety_message === 'string' &&
-    typeof o.note === 'string'
+    Array.isArray(o.recommended_checks_immediate) &&
+    typeof o.safety_message === 'string'
+  )
+}
+
+/** Renders a section only when there is content; avoids empty noisy sections. */
+function Section({
+  label,
+  value,
+}: {
+  label: string
+  value: string | string[]
+}) {
+  if (Array.isArray(value)) {
+    if (value.length === 0) return null
+    return (
+      <div className="mb-3 last:mb-0">
+        <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+          {label}
+        </div>
+        <ul className="list-disc list-inside text-gray-900 space-y-0.5 text-sm">
+          {value.map((item, i) => (
+            <li key={i}>{item}</li>
+          ))}
+        </ul>
+      </div>
+    )
+  }
+  if (!value || !String(value).trim()) return null
+  return (
+    <div className="mb-3 last:mb-0">
+      <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+        {label}
+      </div>
+      <div className="text-gray-900 text-sm whitespace-pre-wrap">{value}</div>
+    </div>
   )
 }
 
@@ -72,50 +123,73 @@ function StructuredAnalysisBlock({
   structured: DiagnosticStructured
   summary: string
 }) {
-  const section = (label: string, value: string | string[]) => {
-    if (Array.isArray(value)) {
-      if (value.length === 0) return null
-      return (
-        <div className="mb-3 last:mb-0">
-          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
-            {label}
-          </div>
-          <ul className="list-disc list-inside text-gray-900 space-y-0.5">
-            {value.map((item, i) => (
-              <li key={i}>{item}</li>
-            ))}
-          </ul>
-        </div>
-      )
-    }
-    if (!value.trim()) return null
-    return (
-      <div className="mb-3 last:mb-0">
-        <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
-          {label}
-        </div>
-        <div className="text-gray-900 whitespace-pre-wrap">{value}</div>
-      </div>
-    )
-  }
-
   const safetyClass =
     structured.safety_level === 'high'
-      ? 'border-amber-200 bg-amber-50'
+      ? 'border-amber-300 bg-amber-50'
       : structured.safety_level === 'medium'
         ? 'border-yellow-200 bg-yellow-50'
-        : 'border-gray-200 bg-white'
+        : 'border-gray-200 bg-gray-50'
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 text-gray-900">
       {summary ? (
-        <div className="whitespace-pre-wrap text-gray-900 mb-3">{summary}</div>
+        <div className="whitespace-pre-wrap text-sm mb-3 pb-3 border-b border-gray-200">
+          {summary}
+        </div>
       ) : null}
-      {section('Likely issue', structured.likely_issue_summary)}
-      {section('Codes detected', structured.codes_detected)}
-      {section('Warnings detected', structured.warnings_detected)}
-      {section('Recommended checks', structured.recommended_checks)}
-      {structured.safety_message ? (
+
+      <Section label="Visible text" value={structured.visible_text} />
+      <Section label="Uncertain / unreadable text" value={structured.uncertain_text} />
+
+      {structured.detected_codes.length > 0 ? (
+        <div className="mb-3 last:mb-0">
+          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">
+            Detected codes
+          </div>
+          <div className="space-y-2">
+            {structured.detected_codes.map((code, i) => (
+              <div
+                key={i}
+                className="rounded-lg border border-gray-200 bg-white p-2.5 shadow-sm"
+              >
+                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <span className="font-mono text-sm font-semibold text-gray-900">
+                    {code.raw_code}
+                  </span>
+                  {code.normalized_code && code.normalized_code !== code.raw_code && (
+                    <span className="font-mono text-xs text-gray-600">
+                      → {code.normalized_code}
+                    </span>
+                  )}
+                  {code.code_type ? (
+                    <span className="text-xs text-gray-500">({code.code_type})</span>
+                  ) : null}
+                  <span className="text-xs text-gray-400 ml-auto">Confidence: {code.confidence}</span>
+                </div>
+                {code.interpretation ? (
+                  <p className="text-sm text-gray-700 mt-1.5 leading-snug">
+                    {code.interpretation}
+                  </p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      <Section label="Warning lights" value={structured.warnings_detected} />
+      <Section label="Fault timestamps" value={structured.fault_timestamps} />
+      <Section label="Fault pattern" value={structured.fault_pattern} />
+      <Section label="Primary systems involved" value={structured.primary_systems_involved} />
+      <Section label="Most likely problem" value={structured.most_likely_problem} />
+      <Section label="Possible causes" value={structured.possible_causes} />
+      <Section label="Immediate checks" value={structured.recommended_checks_immediate} />
+      <Section label="Shop-level checks" value={structured.recommended_checks_shop_level} />
+      <Section label="Driver guidance" value={structured.driver_guidance} />
+      <Section label="Mechanic guidance" value={structured.mechanic_guidance} />
+      <Section label="Missing information" value={structured.missing_information} />
+
+      {(structured.safety_message || structured.safety_level) ? (
         <div
           className={`rounded-lg border p-3 ${safetyClass}`}
           role="alert"
@@ -123,12 +197,25 @@ function StructuredAnalysisBlock({
           <div className="text-xs font-medium text-gray-600 uppercase tracking-wide mb-1">
             Safety
           </div>
-          <div className="text-gray-900">{structured.safety_message}</div>
+          {structured.safety_message ? (
+            <div className="text-sm">{structured.safety_message}</div>
+          ) : null}
+          {structured.can_driver_continue ? (
+            <p className="text-xs text-gray-600 mt-1.5">
+              Can driver continue: {structured.can_driver_continue}
+            </p>
+          ) : null}
         </div>
       ) : null}
-      {section('Confidence', structured.confidence)}
-      {section('Note', structured.note)}
-      <p className="text-xs text-gray-500 mt-3 pt-2 border-t border-gray-200">
+
+      {structured.overall_confidence ? (
+        <div className="text-xs text-gray-500">
+          <span className="font-medium uppercase tracking-wide">Overall confidence:</span>{' '}
+          {structured.overall_confidence}
+        </div>
+      ) : null}
+
+      <p className="text-xs text-gray-500 pt-2 border-t border-gray-200">
         AI analysis is guidance only. Verify safety-critical warnings before driving.
       </p>
     </div>
@@ -255,12 +342,17 @@ export default function ChatPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data?.error || 'Chat failed')
 
+      const reply = typeof data.reply === 'string' ? data.reply : ''
+      const structured = hasStructured(data) ? data.structured : undefined
+      const content =
+        reply ||
+        (structured ? `${structured.most_likely_problem || 'Analysis complete.'}${structured.safety_message ? ` ${structured.safety_message}` : ''}`.trim() : '')
       setMessages((m) => [
         ...m,
         {
           role: 'assistant',
-          content: data.reply ?? '',
-          structured: hasStructured(data) ? data.structured : undefined,
+          content: content || 'Diagnostic analysis complete.',
+          structured,
         },
       ])
     } catch (e: unknown) {
