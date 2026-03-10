@@ -32,11 +32,30 @@ type DiagnosticStructured = {
   overall_confidence: 'low' | 'medium' | 'high'
 }
 
+/** Minimal shape for optional knowledge context from the chat API (first-pass display). */
+type KnowledgeContextShape = {
+  matchedBrand?: { name?: string; slug?: string } | null
+  matchedModules?: Array<{ code?: string; name?: string; subsystem?: string }>
+  matchedCanonicalFaults?: Array<{ code?: string; title?: string; description?: string | null }>
+  /** Ranked matches (preferred for display order); includes score, reasons, confidence. */
+  rankedCanonicalFaults?: Array<{
+    fault: { code?: string; title?: string; description?: string | null }
+    score: number
+    reasons: string[]
+    confidence: 'low' | 'medium' | 'high'
+  }>
+  matchedProcedures?: Array<{ title?: string; audience?: string; summary?: string | null }>
+  unresolvedCodes?: string[]
+  confidenceNotes?: string[]
+  evidenceSummary?: string[]
+}
+
 /** Message history entry. Same shape for text-only and image analysis: role + content always set; structured only when backend returns dashboard analysis. */
 type ChatMsg = {
   role: 'user' | 'assistant'
   content: string
   structured?: DiagnosticStructured
+  knowledgeContext?: KnowledgeContextShape | null
 }
 
 const ALLOWED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp']
@@ -80,6 +99,12 @@ function hasStructured(data: unknown): data is { structured: DiagnosticStructure
     Array.isArray(o.recommended_checks_immediate) &&
     typeof o.safety_message === 'string'
   )
+}
+
+function hasKnowledgeContext(data: unknown): data is { knowledgeContext: KnowledgeContextShape } {
+  if (data === null || typeof data !== 'object') return false
+  const k = (data as Record<string, unknown>).knowledgeContext
+  return k !== undefined && k !== null && typeof k === 'object' && !Array.isArray(k)
 }
 
 /** Renders a section only when there is content; avoids empty noisy sections. */
@@ -222,6 +247,119 @@ function StructuredAnalysisBlock({
   )
 }
 
+/** Compact knowledge-base section; only renders when context exists and has at least one useful section. */
+function KnowledgeContextBlock({ context }: { context: KnowledgeContextShape }) {
+  const hasBrand = context.matchedBrand && (context.matchedBrand.name ?? context.matchedBrand.slug)
+  const hasModules = context.matchedModules && context.matchedModules.length > 0
+  const ranked = context.rankedCanonicalFaults ?? []
+  const flatFaults = context.matchedCanonicalFaults ?? []
+  const hasFaults = ranked.length > 0 || flatFaults.length > 0
+  const hasProcedures = context.matchedProcedures && context.matchedProcedures.length > 0
+  const hasUnresolved = context.unresolvedCodes && context.unresolvedCodes.length > 0
+  const hasConfidence = context.confidenceNotes && context.confidenceNotes.length > 0
+  const hasSummary = context.evidenceSummary && context.evidenceSummary.length > 0
+
+  const topRanked = ranked.slice(0, 3)
+  const showRanked = topRanked.length > 0
+  const topTwoClose = showRanked && topRanked.length >= 2 && (topRanked[0].score - topRanked[1].score) <= 8
+
+  if (!hasBrand && !hasModules && !hasFaults && !hasProcedures && !hasUnresolved && !hasConfidence && !hasSummary) {
+    return null
+  }
+
+  return (
+    <div className="mt-3 pt-3 border-t border-gray-200">
+      <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+        From knowledge base
+      </div>
+      <div className="space-y-2 text-sm text-gray-700">
+        {hasBrand && (
+          <div>
+            <span className="text-gray-500">Brand: </span>
+            {context.matchedBrand!.name ?? context.matchedBrand!.slug}
+          </div>
+        )}
+        {hasModules && (
+          <div>
+            <span className="text-gray-500">ECU modules: </span>
+            {context.matchedModules!.map((m) => m.code ?? m.name).filter(Boolean).join(', ') || '—'}
+          </div>
+        )}
+        {hasFaults && (
+          <div>
+            <span className="text-gray-500">Matched faults{showRanked ? ' (by relevance)' : ''}: </span>
+            <ul className="list-disc list-inside mt-0.5 space-y-1">
+              {showRanked
+                ? topRanked.map((r, i) => (
+                    <li key={i} className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+                      <span className="font-mono">{r.fault.code ?? '—'}</span>
+                      {r.fault.title ? <span>— {r.fault.title}</span> : null}
+                      <span className="inline-flex items-center gap-1 flex-wrap">
+                        <span className={`text-xs px-1.5 py-0.5 rounded ${r.confidence === 'high' ? 'bg-emerald-100 text-emerald-800' : r.confidence === 'medium' ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-600'}`}>
+                          {r.confidence}
+                        </span>
+                        {r.reasons.slice(0, 2).map((reason, j) => (
+                          <span key={j} className="text-xs text-gray-500">· {reason}</span>
+                        ))}
+                      </span>
+                    </li>
+                  ))
+                : flatFaults.map((f, i) => (
+                    <li key={i}>
+                      <span className="font-mono">{f.code ?? '—'}</span>
+                      {f.title ? ` — ${f.title}` : ''}
+                    </li>
+                  ))}
+            </ul>
+            {showRanked && ranked.length > 3 && (
+              <span className="text-xs text-gray-500 mt-0.5 block">+{ranked.length - 3} more in knowledge base</span>
+            )}
+            {topTwoClose && (
+              <p className="text-xs text-amber-700 mt-1">Top matches are close; consider multiple.</p>
+            )}
+          </div>
+        )}
+        {hasProcedures && (
+          <div>
+            <span className="text-gray-500">Procedures: </span>
+            <ul className="list-disc list-inside mt-0.5 space-y-0.5">
+              {context.matchedProcedures!.map((p, i) => (
+                <li key={i}>{p.title ?? '—'}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {hasUnresolved && (
+          <div>
+            <span className="text-gray-500">Unresolved codes: </span>
+            {context.unresolvedCodes!.join(', ')}
+          </div>
+        )}
+        {hasConfidence && (
+          <div>
+            <span className="text-gray-500">Notes: </span>
+            <ul className="list-disc list-inside mt-0.5 space-y-0.5">
+              {context.confidenceNotes!.map((n, i) => (
+                <li key={i}>{n}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {hasSummary && (
+          <div>
+            <span className="text-gray-500">Summary: </span>
+            <ul className="list-disc list-inside mt-0.5 space-y-0.5">
+              {context.evidenceSummary!.map((s, i) => (
+                <li key={i}>{s}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function ChatPage() {
   const [caseId, setCaseId] = useState<string | null>(null)
   const [messages, setMessages] = useState<ChatMsg[]>([])
@@ -344,6 +482,7 @@ export default function ChatPage() {
 
       const reply = typeof data.reply === 'string' ? data.reply : ''
       const structured = hasStructured(data) ? data.structured : undefined
+      const knowledgeContext = hasKnowledgeContext(data) ? data.knowledgeContext : undefined
       const content =
         reply ||
         (structured ? `${structured.most_likely_problem || 'Analysis complete.'}${structured.safety_message ? ` ${structured.safety_message}` : ''}`.trim() : '')
@@ -353,6 +492,7 @@ export default function ChatPage() {
           role: 'assistant',
           content: content || 'Diagnostic analysis complete.',
           structured,
+          knowledgeContext: knowledgeContext ?? null,
         },
       ])
     } catch (e: unknown) {
@@ -416,7 +556,12 @@ export default function ChatPage() {
                 {m.role === 'user' ? 'You' : 'TruckHelpNow'}
               </div>
               {m.role === 'assistant' && m.structured ? (
-                <StructuredAnalysisBlock structured={m.structured} summary={m.content} />
+                <>
+                  <StructuredAnalysisBlock structured={m.structured} summary={m.content} />
+                  {m.knowledgeContext && (
+                    <KnowledgeContextBlock context={m.knowledgeContext} />
+                  )}
+                </>
               ) : (
                 <div className="whitespace-pre-wrap text-gray-900">
                   {m.content}

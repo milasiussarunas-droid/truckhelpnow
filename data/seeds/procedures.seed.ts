@@ -1,0 +1,80 @@
+import type { ProcedureSeedRow } from './seed-types'
+
+/** Starter reusable procedures (driver- and shop-level). */
+export const procedures: ProcedureSeedRow[] = [
+  {
+    procedure_code: 'check-def-level',
+    title: 'Check DEF level and quality',
+    audience: 'driver',
+    summary: 'Verify DEF tank level and condition; top off with certified DEF if low.',
+    steps: [
+      { order: 1, text: 'Park on level ground, engine off.' },
+      { order: 2, text: 'Locate DEF tank (usually blue cap).' },
+      { order: 3, text: 'Check level; add certified DEF (ISO 22241) if below 1/4.' },
+      { order: 4, text: 'Do not mix with fuel or other fluids.' },
+    ],
+    tools_required: [],
+    safety_notes: ['DEF is not fuel; misfueling can damage aftertreatment.'],
+    stop_conditions: ['If DEF is contaminated or wrong fluid was added, do not start engine; contact shop.'],
+  },
+  {
+    procedure_code: 'verify-dpf-regen',
+    title: 'Verify DPF regen status and request stationary regen',
+    audience: 'technician',
+    summary: 'Check DPF status and initiate forced regen if conditions are met.',
+    steps: [
+      { order: 1, text: 'Connect scan tool; read DPF soot load and regen status.' },
+      { order: 2, text: 'Ensure vehicle is in safe location (no flammables, ventilation).' },
+      { order: 3, text: 'Follow OEM procedure for stationary regen (engine speed, duration).' },
+      { order: 4, text: 'Monitor exhaust temperature and complete cycle.' },
+    ],
+    tools_required: [{ name: 'OEM or J1939-capable scan tool' }],
+    safety_notes: ['Exhaust gets very hot during regen. Keep clear of exhaust path.'],
+    stop_conditions: ['Abort if high exhaust temp warning or abnormal shutdown.'],
+  },
+  {
+    procedure_code: 'inspect-brake-system',
+    title: 'Inspect brake system and parking brake circuit',
+    audience: 'technician',
+    summary: 'Visual and electrical check of parking brake and service brake circuits.',
+    steps: [
+      { order: 1, text: 'Chock wheels; release parking brake and verify dash indication.' },
+      { order: 2, text: 'Apply parking brake and verify hold and indicator.' },
+      { order: 3, text: 'Check wiring and connectors at brake controller and switches.' },
+      { order: 4, text: 'Read SPN 1214 and related codes; clear if fault resolved.' },
+    ],
+    tools_required: [{ name: 'Multimeter' }, { name: 'Scan tool' }],
+    safety_notes: ['Never work under vehicle without proper support.'],
+    stop_conditions: ['If brake hardware is damaged, do not release for road use.'],
+  },
+  {
+    procedure_code: 'check-boost-pressure',
+    title: 'Check intake and boost pressure circuit',
+    audience: 'technician',
+    summary: 'Diagnose SPN 96 / boost sensor and manifold pressure circuit.',
+    steps: [
+      { order: 1, text: 'Read active codes and freeze frame for SPN 96.' },
+      { order: 2, text: 'Inspect MAP/boost sensor connector and hose for leaks or damage.' },
+      { order: 3, text: 'Measure sensor supply and signal per OEM specs.' },
+      { order: 4, text: 'Compare with known-good or replace if out of range.' },
+    ],
+    tools_required: [{ name: 'Multimeter' }, { name: 'Scan tool' }],
+    safety_notes: [],
+    stop_conditions: [],
+  },
+  {
+    procedure_code: 'check-air-system',
+    title: 'Check air system pressure and compressor governor',
+    audience: 'technician',
+    summary: 'Verify air reservoir pressure and compressor governor operation; diagnose SPN 51.',
+    steps: [
+      { order: 1, text: 'Drain air tanks per OEM; check for moisture or contamination.' },
+      { order: 2, text: 'Build air pressure and note cut-in/cut-out; compare to specs.' },
+      { order: 3, text: 'Inspect governor wiring and supply; test governor valve if applicable.' },
+      { order: 4, text: 'Read SPN 51 and related codes; repair or replace as needed.' },
+    ],
+    tools_required: [{ name: 'Pressure gauge' }, { name: 'Multimeter' }, { name: 'Scan tool' }],
+    safety_notes: ['Release air pressure safely before opening air system components.'],
+    stop_conditions: ['Do not drive if air pressure cannot be maintained in safe range.'],
+  },
+]

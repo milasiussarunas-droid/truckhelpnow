@@ -1,0 +1,74 @@
+[
+  {
+    "id": "text-only-def-code",
+    "input": {
+      "message": "I have a P20EE code and the DEF light is on. 2020 Freightliner.",
+      "hasImage": false,
+      "rawCodes": ["P20EE"],
+      "suspectedBrand": "Freightliner"
+    },
+    "expected": {
+      "primarySubsystems": ["aftertreatment", "emissions"],
+      "replyContainsPhrases": ["DEF", "aftertreatment"],
+      "acknowledgesUnresolved": false,
+      "expectHonestyNoteWhenInconsistent": true,
+      "topRankedFaultCodes": []
+    },
+    "notes": "Common DEF/SCR code; expect KB match and brand context."
+  },
+  {
+    "id": "text-only-spn-fmi",
+    "input": {
+      "message": "SPN 4364 FMI 18 on the dash. What should I check?",
+      "hasImage": false,
+      "rawCodes": ["4364", "18"],
+      "suspectedBrand": null
+    },
+    "expected": {
+      "primarySubsystems": [],
+      "replyContainsPhrases": [],
+      "acknowledgesUnresolved": false,
+      "expectHonestyNoteWhenInconsistent": true
+    },
+    "notes": "SPN/FMI style; may or may not match KB depending on seed data."
+  },
+  {
+    "id": "text-only-unknown-code",
+    "input": {
+      "message": "Code XYZ999 showed up. Truck is a Kenworth.",
+      "hasImage": false,
+      "rawCodes": ["XYZ999"],
+      "suspectedBrand": "Kenworth"
+    },
+    "expected": {
+      "acknowledgesUnresolved": true,
+      "expectHonestyNoteWhenInconsistent": true
+    },
+    "notes": "Unresolved code; expect missing_information or reply to acknowledge gap."
+  },
+  {
+    "id": "image-only-dashboard",
+    "input": {
+      "message": "",
+      "imagePath": "lib/diagnostics/evaluation/fixtures/dashboard-sample.png",
+      "hasImage": true
+    },
+    "expected": {
+      "expectTwoPassFlow": true
+    },
+    "notes": "Image-only: place a dashboard/warning screenshot at the imagePath. Expects two-pass flow."
+  },
+  {
+    "id": "image-plus-message-dtc",
+    "input": {
+      "message": "What does this mean? Freightliner Cascadia.",
+      "imagePath": "lib/diagnostics/evaluation/fixtures/dtc-scan.jpg",
+      "hasImage": true,
+      "suspectedBrand": "Freightliner"
+    },
+    "expected": {
+      "expectTwoPassFlow": true
+    },
+    "notes": "Image + message: place a DTC/scan tool image at the path. Expects two-pass flow and optional KB brand context."
+  }
+]
