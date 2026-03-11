@@ -746,10 +746,10 @@ export async function POST(req: Request) {
 
     if (imageDataUrl == null) {
       // ─── Text-only: single-pass with message-based grounding ─────────────────
+      const extracted = extractTruckEvidence([], message || null)
       let preCallKnowledgeContext: KnowledgeContext | null = null
       const preCallKbStart = Date.now()
       try {
-        const extracted = extractTruckEvidence([], message || null)
         preCallKnowledgeContext = await resolveTruckFaultContext({
           rawCodes: extracted.rawCodes,
           ecuLabels: extracted.ecuLabels,
