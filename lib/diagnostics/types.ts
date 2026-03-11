@@ -260,6 +260,25 @@ export interface TruckFaultEvidenceInput {
   spnFmiCandidates?: SpnFmiCandidate[]
 }
 
+/** Row from truck_diagnostic_kb (additional KB source; may have different column names in DB). */
+export interface DiagnosticKbRow {
+  id: string
+  /** Raw/display code as shown (e.g. P20EE, 4364/18). */
+  display_code?: string | null
+  /** Normalized code (e.g. SPN 4364 FMI 18). */
+  canonical_fault_code?: string | null
+  /** Brand slug when row is brand-specific (e.g. volvo). */
+  brand_slug?: string | null
+  spn?: number | null
+  fmi?: number | null
+  title?: string | null
+  description?: string | null
+  /** When true, treat as partial/incomplete match. */
+  is_partial?: boolean | null
+  /** Source or provenance (e.g. document id, manual name). */
+  provenance?: string | null
+}
+
 export interface ResolvedTruckFaultContext {
   matchedBrand: Brand | null
   matchedModules: ModuleDefinition[]
@@ -271,6 +290,8 @@ export interface ResolvedTruckFaultContext {
   matchedBrandOverrides: FaultBrandOverride[]
   /** Ranked canonical faults with score, reasons, and confidence (derived from matched set). */
   rankedCanonicalFaults: RankedCanonicalFault[]
+  /** Additional matches from truck_diagnostic_kb (e.g. Volvo rows). */
+  matchedDiagnosticKb: DiagnosticKbRow[]
   evidenceSummary: string[]
   confidenceNotes: string[]
   /** Raw codes that did not match any alias or canonical fault. */

@@ -15,6 +15,7 @@ import type {
 } from '@/lib/diagnostics/types'
 import { rankCanonicalFaults } from '@/lib/diagnostics/ranking'
 import {
+  findDiagnosticKbMatches,
   findFaultAliasesByRawCode,
   getBrandByNameOrSlug,
   getBrandOverrideForFault,
@@ -154,6 +155,22 @@ export async function resolveTruckFaultContext(
     matchedBrandOverrides,
   })
 
+  let matchedDiagnosticKb: Awaited<ReturnType<typeof findDiagnosticKbMatches>> = []
+  const diagnosticKbBrandSlug =
+    matchedBrand?.slug ?? (suspectedBrand?.trim() ? suspectedBrand.trim().toLowerCase().replace(/\s+/g, '_') : null)
+  try {
+    matchedDiagnosticKb = await findDiagnosticKbMatches({
+      rawCodes,
+      brandSlug: diagnosticKbBrandSlug,
+      spnFmiCandidates,
+    })
+  } catch (e) {
+    // Do not fail resolution if truck_diagnostic_kb is missing or schema differs
+    if (typeof console !== 'undefined' && console.warn) {
+      console.warn('findDiagnosticKbMatches failed (table may be missing or schema differs):', e)
+    }
+  }
+
   return {
     matchedBrand,
     matchedModules,
@@ -162,6 +179,7 @@ export async function resolveTruckFaultContext(
     matchedProcedures,
     matchedBrandOverrides,
     rankedCanonicalFaults,
+    matchedDiagnosticKb,
     evidenceSummary,
     confidenceNotes,
     unresolvedCodes,

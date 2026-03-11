@@ -38,9 +38,15 @@ const MID_PID_FMI_REGEX = /\bMID\s*\d+\s*PID\s*\d+\s*FMI\s*\d+\b/gi
 /** Digit/digit or digit-digit (e.g. "4364/18", "91-3") – treat as raw code for alias lookup. */
 const DIGIT_SLASH_DIGIT_REGEX = /\b(\d+)\s*[\/-]\s*(\d+)\b/g
 
+/** SPN N without FMI (e.g. "SPN 3557", "SPN 168") – for truck_diagnostic_kb SPN-only rows. */
+const SPN_ONLY_REGEX = /\bSPN\s*(\d+)\b/gi
+
+/** C-codes (e.g. C0383) – OEM/Volvo-style codes. */
+const C_CODE_REGEX = /\b(C\d+[0-9A-Za-z]*)\b/gi
+
 /**
  * Extract raw diagnostic code strings from combined text.
- * Examples: "P113712", "P1137", "SPN 3464 FMI 7", "SPN3464 FMI7", "MID 128 PID 84 FMI 2", "4364/18".
+ * Examples: "P113712", "P1137", "SPN 3464 FMI 7", "SPN 3557", "SPN3464 FMI7", "MID 128 PID 84 FMI 2", "4364/18", "C0383".
  */
 export function extractRawCodes(text: string): string[] {
   if (!text?.trim()) return []
@@ -59,6 +65,11 @@ export function extractRawCodes(text: string): string[] {
     add(`SPN ${m[1]} FMI ${m[2]}`)
   }
 
+  SPN_ONLY_REGEX.lastIndex = 0
+  while ((m = SPN_ONLY_REGEX.exec(text)) !== null) {
+    add(`SPN ${m[1]}`)
+  }
+
   MID_PID_FMI_REGEX.lastIndex = 0
   while ((m = MID_PID_FMI_REGEX.exec(text)) !== null) add(m[0]!)
 
@@ -66,6 +77,9 @@ export function extractRawCodes(text: string): string[] {
   while ((m = DIGIT_SLASH_DIGIT_REGEX.exec(text)) !== null) {
     add(`${m[1]}/${m[2]}`)
   }
+
+  C_CODE_REGEX.lastIndex = 0
+  while ((m = C_CODE_REGEX.exec(text)) !== null) add(m[1]!)
 
   return Array.from(seen)
 }

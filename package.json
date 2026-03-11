@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "seed": "tsx scripts/seed-knowledge.ts",
-    "eval": "tsx scripts/run-diagnostic-eval.ts"
+    "eval": "tsx scripts/run-diagnostic-eval.ts",
+    "test:diagnostic-kb": "tsx scripts/test-diagnostic-kb.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.97.0",

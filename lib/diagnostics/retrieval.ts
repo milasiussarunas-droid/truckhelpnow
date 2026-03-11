@@ -7,6 +7,7 @@ import { getSupabase } from '@/lib/supabase-server'
 import type {
   Brand,
   CanonicalFault,
+  DiagnosticKbRow,
   FaultAlias,
   FaultBrandOverride,
   ModuleDefinition,
@@ -177,4 +178,99 @@ export async function getBrandOverrideForFault(
     .maybeSingle()
   if (error) throw new Error(`getBrandOverrideForFault: ${error.message}`)
   return data as FaultBrandOverride | null
+}
+
+// ─── truck_diagnostic_kb (additional KB source) ─────────────────────────────
+
+/**
+ * Find rows in truck_diagnostic_kb matching raw/display codes, canonical code, or SPN/FMI.
+ * Optional brand_slug filters to brand-specific rows (e.g. Volvo).
+ * Preserves is_partial and provenance; used as additional context alongside canonical_faults.
+ */
+export async function findDiagnosticKbMatches(opts: {
+  rawCodes: string[]
+  brandSlug?: string | null
+  spnFmiCandidates?: { spn: number; fmi: number }[]
+}): Promise<DiagnosticKbRow[]> {
+  const { rawCodes, brandSlug, spnFmiCandidates } = opts
+  const codes = rawCodes.filter((c) => c?.trim())
+  const supabase = getSupabase()
+  const seen = new Map<string, DiagnosticKbRow>()
+
+  const normalizeRow = (row: Record<string, unknown>): DiagnosticKbRow => ({
+    id: String(row.id ?? ''),
+    display_code: (row.display_code ?? row.code ?? row.raw_code) != null
+      ? String(row.display_code ?? row.code ?? row.raw_code)
+      : null,
+    canonical_fault_code: row.canonical_fault_code != null ? String(row.canonical_fault_code) : null,
+    brand_slug: (row.brand_slug ?? row.brand) != null ? String(row.brand_slug ?? row.brand) : null,
+    spn: row.spn != null ? Number(row.spn) : null,
+    fmi: row.fmi != null ? Number(row.fmi) : null,
+    title: row.title != null ? String(row.title) : null,
+    description: row.description != null ? String(row.description) : null,
+    is_partial: row.is_partial != null ? Boolean(row.is_partial) : null,
+    provenance:
+      row.provenance != null
+        ? typeof row.provenance === 'string'
+          ? row.provenance
+          : JSON.stringify(row.provenance)
+        : null,
+  })
+
+  const brandFilter = brandSlug?.trim() ?? null
+  // Prefer 'brand' column (actual table); fallback to 'brand_slug' for migration schema
+  const brandCol = 'brand'
+
+  if (codes.length > 0) {
+    for (const col of ['display_code', 'canonical_fault_code', 'code', 'raw_code'] as const) {
+      let q = supabase.from('truck_diagnostic_kb').select('*').in(col, codes)
+      if (brandFilter) q = q.eq(brandCol, brandFilter)
+      const { data, error } = await q
+      if (error) continue
+      for (const row of data ?? []) {
+        const r = normalizeRow(row as Record<string, unknown>)
+        if (r.id && !seen.has(r.id)) seen.set(r.id, r)
+      }
+    }
+  }
+
+  if (spnFmiCandidates?.length) {
+    for (const { spn, fmi } of spnFmiCandidates) {
+      let q = supabase
+        .from('truck_diagnostic_kb')
+        .select('*')
+        .eq('spn', spn)
+        .eq('fmi', fmi)
+      if (brandFilter) q = q.eq(brandCol, brandFilter)
+      const { data, error } = await q
+      if (error) throw new Error(`findDiagnosticKbMatches(spn/fmi): ${error.message}`)
+      for (const row of data ?? []) {
+        const r = normalizeRow(row as Record<string, unknown>)
+        if (r.id && !seen.has(r.id)) seen.set(r.id, r)
+      }
+    }
+  }
+
+  // SPN-only rows (spn set, fmi null): match rawCodes like "SPN 3557" to rows with that spn and no fmi
+  const spnOnlyRegex = /^SPN\s*(\d+)$/i
+  for (const raw of codes) {
+    const match = raw.match(spnOnlyRegex)
+    if (!match) continue
+    const spn = parseInt(match[1], 10)
+    if (Number.isNaN(spn)) continue
+    let q = supabase
+      .from('truck_diagnostic_kb')
+      .select('*')
+      .eq('spn', spn)
+      .is('fmi', null)
+    if (brandFilter) q = q.eq(brandCol, brandFilter)
+    const { data, error } = await q
+    if (error) continue
+    for (const row of data ?? []) {
+      const r = normalizeRow(row as Record<string, unknown>)
+      if (r.id && !seen.has(r.id)) seen.set(r.id, r)
+    }
+  }
+
+  return Array.from(seen.values())
 }

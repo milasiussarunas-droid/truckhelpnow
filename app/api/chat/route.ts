@@ -413,6 +413,20 @@ function formatDiagnosticReply(diagnostic: DiagnosticResponse): string {
 
 type KnowledgeContext = Awaited<ReturnType<typeof resolveTruckFaultContext>>
 
+/** Short display label for a truck_diagnostic_kb row when title is null (description snippet or code). */
+function getDiagnosticKbLabel(kb: {
+  title?: string | null
+  description?: string | null
+  display_code?: string | null
+  canonical_fault_code?: string | null
+}): string {
+  const t = kb.title?.trim()
+  if (t) return t.length > 80 ? t.slice(0, 80) + '…' : t
+  const d = kb.description?.trim()
+  if (d) return d.length > 60 ? d.slice(0, 60).trim() + '…' : d
+  return kb.display_code || kb.canonical_fault_code || 'Code match'
+}
+
 /** Score difference below which we treat top two ranked faults as ambiguous (preserve multiple candidates). */
 const RANKED_TIE_THRESHOLD = 8
 
@@ -483,6 +497,21 @@ function formatKnowledgeContextForPrompt(ctx: KnowledgeContext): string {
   if (ctx.confidenceNotes.length > 0) {
     const notes = ctx.confidenceNotes.slice(0, 2).join(' ')
     lines.push(`Notes: ${notes}`)
+  }
+  if (ctx.matchedDiagnosticKb?.length > 0) {
+    lines.push('Additional diagnostic KB matches (truck_diagnostic_kb):')
+    const take = 5
+    ctx.matchedDiagnosticKb.slice(0, take).forEach((kb, i) => {
+      const code = kb.display_code || kb.canonical_fault_code || 'code'
+      const label = getDiagnosticKbLabel(kb)
+      const part = kb.is_partial ? ' (partial match)' : ''
+      lines.push(`  ${i + 1}. ${code}: ${label}${part}.`)
+      if (kb.description) lines.push(`     ${kb.description.slice(0, 120)}${kb.description.length > 120 ? '…' : ''}`)
+      if (kb.provenance) lines.push(`     Source: ${kb.provenance}.`)
+    })
+    if (ctx.matchedDiagnosticKb.length > take) {
+      lines.push(`  (+${ctx.matchedDiagnosticKb.length - take} more from truck_diagnostic_kb.)`)
+    }
   }
   return lines.filter(Boolean).join('\n')
 }
@@ -572,6 +601,14 @@ function formatKnowledgeContextReply(ctx: KnowledgeContext): string {
   }
   if (ctx.matchedBrand && ctx.matchedBrandOverrides.length > 0) {
     lines.push(`Brand-specific notes available for ${ctx.matchedBrand.name}.`)
+  }
+  if (ctx.matchedDiagnosticKb?.length > 0) {
+    const few = ctx.matchedDiagnosticKb.slice(0, 3)
+    const summary = few
+      .map((kb) => `${kb.display_code || kb.canonical_fault_code || 'code'}: ${getDiagnosticKbLabel(kb)}${kb.is_partial ? ' (partial)' : ''}`)
+      .join('; ')
+    const more = ctx.matchedDiagnosticKb.length > 3 ? ` (+${ctx.matchedDiagnosticKb.length - 3} more)` : ''
+    lines.push(`Diagnostic KB matches: ${summary}${more}.`)
   }
   return lines.filter(Boolean).join('\n')
 }
