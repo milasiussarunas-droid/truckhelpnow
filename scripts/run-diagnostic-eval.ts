@@ -60,6 +60,9 @@ async function runCase(
   const url = `${baseUrl.replace(/\/$/, '')}/api/chat`
   const formData = new FormData()
   formData.set('message', case_.input.message ?? '')
+  if (process.env.THN_DEBUG === '1' || process.env.THN_DEBUG === 'true') {
+    formData.set('debug', '1')
+  }
 
   if (case_.input.imagePath) {
     const resolvedPath = path.isAbsolute(case_.input.imagePath)
@@ -131,6 +134,27 @@ async function runCase(
       warnings: string[]
       severity: 'low' | 'medium'
     }
+    sourcesUsed?: string[]
+    evidenceStrength?: 'strong' | 'mixed' | 'weak'
+    debug?: {
+      inspection?: {
+        diagnosticKb?: Array<{
+          order?: number
+          display_code?: string | null
+          provenance?: string | null
+          trust?: string
+          source_label?: string | null
+          snippet?: string
+        }>
+        strongestItems?: Array<{
+          order?: number
+          display_code?: string | null
+          trust?: string
+          source_label?: string | null
+          snippet?: string
+        }>
+      }
+    }
   }
 
   const reply = json.reply ?? ''
@@ -165,6 +189,11 @@ async function runCase(
     overallConfidence: json.structured?.overall_confidence,
     safetyLevel: json.structured?.safety_level,
     hasHonestyNote,
+    sourcesUsed: json.sourcesUsed,
+    evidenceStrength: json.evidenceStrength,
+    debugInspectionKbCount: json.debug?.inspection?.diagnosticKb?.length,
+    debugInspectionKb: json.debug?.inspection?.diagnosticKb,
+    debugStrongestItems: json.debug?.inspection?.strongestItems,
   }
 
   return { output }
@@ -303,6 +332,31 @@ async function main() {
       console.log('  primarySystemsInvolved:', (r.output.primarySystemsInvolved ?? []).join(', ') || '—')
       console.log('  overallConfidence:', r.output.overallConfidence ?? '—')
       console.log('  hasHonestyNote:', r.output.hasHonestyNote ?? false)
+      if (r.output.sourcesUsed?.length) console.log('  sourcesUsed:', r.output.sourcesUsed.join('; '))
+      if (r.output.evidenceStrength) console.log('  evidenceStrength:', r.output.evidenceStrength)
+      if (r.output.debugInspectionKbCount != null) console.log('  debugInspectionKbCount:', r.output.debugInspectionKbCount)
+      const kb = r.output.debugInspectionKb
+      if (kb && kb.length > 0) {
+        console.log('  KB items used for synthesis (for faithfulness check):')
+        kb.forEach((item) => {
+          const code = item.display_code ?? '—'
+          const trust = item.trust ?? '—'
+          const label = (item as { source_label?: string | null }).source_label ?? '—'
+          const snip = (item.snippet ?? '—').slice(0, 60) + ((item.snippet?.length ?? 0) > 60 ? '…' : '')
+          console.log(`    #${item.order ?? '?'} [${trust}] ${label} ${code}: ${snip}`)
+        })
+      }
+      const strongest = r.output.debugStrongestItems
+      if (strongest && strongest.length > 0) {
+        console.log('  Strongest items (answer should reference these):')
+        strongest.forEach((item) => {
+          const code = item.display_code ?? '—'
+          const trust = item.trust ?? '—'
+          const label = item.source_label ?? '—'
+          const snip = (item.snippet ?? '—').slice(0, 50) + ((item.snippet?.length ?? 0) > 50 ? '…' : '')
+          console.log(`    #${item.order ?? '?'} [${trust}] ${label} ${code}: ${snip}`)
+        })
+      }
 
       if (!r.output.diagnosticConsistency.isConsistent) totalWithHonestyNote += r.output.hasHonestyNote ? 1 : 0
       if (r.output.diagnosticConsistency.isConsistent) totalConsistent++

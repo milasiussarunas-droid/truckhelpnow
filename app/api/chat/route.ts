@@ -3,6 +3,20 @@ import OpenAI from 'openai'
 import { checkDiagnosticConsistency } from '@/lib/diagnostics/consistency-check'
 import { extractTruckEvidence } from '@/lib/diagnostics/evidence-extraction'
 import { resolveTruckFaultContext } from '@/lib/diagnostics/knowledge-service'
+import {
+  buildDebugInspectionKb,
+  formatEvidenceStrengthLine,
+  formatProvenanceWithTrust,
+  formatSourcesLine,
+  getEvidenceStrength,
+  getNoMatchLowMatchInstruction,
+  getSourceLabelsForDisplay,
+  getStrongestItemsForDebug,
+  getSynthesisInstructionsForQueryType,
+  getWeakEvidenceInstruction,
+  inferDiagnosticQueryType,
+  sortDiagnosticKbByTrust,
+} from '@/lib/diagnostics/synthesis'
 
 const ALLOWED_IMAGE_TYPES = [
   'image/png',
@@ -155,6 +169,12 @@ Avoid generic fallback: tie recommendations to the codes or symptoms the user ga
 
 KNOWLEDGE BASE (KB) CONTEXT: When the user message includes a block of ranked canonical fault matches from the knowledge base, treat them as supporting evidence, not certainty. Prefer higher-confidence ranked matches when they align with the user's codes and symptoms; use the listed reasons on the top-ranked match as evidence when relevant. If the prompt says "top matches are close in score" or "multiple faults may be plausible", preserve ambiguity—do not force a single winner when evidence is weak or conflicting. Always prioritize the user's stated codes and symptoms over KB order. If KB support is weak or unresolved codes are listed, say so explicitly in your response.
 
+EVIDENCE USE: Prefer high-trust sources (OEM docs, recalls, bulletins, electrical/VECU manuals, wiring docs) when summarizing causes and checks; use forum or discussion sources as secondary/supporting context only, not as primary authority. When retrieved evidence is strong, be specific (cite code meaning, likely causes, what to inspect first, and what the docs say). When evidence is weak or mixed, state clearly what is known vs uncertain and avoid generic filler that does not reflect the retrieved docs.
+
+GROUNDING: Base your answer only on the provided KB block and the user message. Do not invent causes, checks, or part numbers that are not in the KB or clearly implied by the user's codes/symptoms. If the KB block is empty or lists "Codes not found in KB", set overall_confidence to low and state in most_likely_problem or missing_information that coverage is limited. Every claim in most_likely_problem, possible_causes, and recommended_checks should be traceable to the KB or to the user's stated codes/symptoms.
+
+ANSWER STRUCTURE: For every diagnostic answer use this structure: most_likely_problem = likely meaning + problem summary; possible_causes = likely causes; recommended_checks_immediate = first checks to do; cite supporting evidence from the KB in your text; overall_confidence and missing_information = confidence/caveats (set confidence to low when KB is weak or empty).
+
 Respond using the required JSON schema: set image_quality to "N/A" when no image is provided; use visible_text and uncertain_text from the user's message; put any codes mentioned in detected_codes (raw_code and normalized_code as appropriate); fill most_likely_problem, possible_causes, recommended_checks_immediate, recommended_checks_shop_level, driver_guidance (simple, what the driver can do or observe), mechanic_guidance (technical, shop-level), can_driver_continue, safety_level, safety_message, overall_confidence from the user's text. Use empty arrays for fields that do not apply.`
 
 const imageAnalysisSystemPrompt = `You are a heavy-duty truck diagnostic assistant for TruckHelpNow. The user may upload a photo of their truck dashboard (warnings, fault codes, gauges, messages) or a scan tool / DTC reader screenshot. Follow this sequence strictly. Do not skip steps.
@@ -203,6 +223,12 @@ AVOID GENERIC FALLBACK ADVICE:
 - Every recommended check (immediate and shop-level) must be tied to a likely subsystem or to a visible code/indicator; avoid standalone generic tips.
 
 KNOWLEDGE BASE (KB) CONTEXT: When the prompt includes a block of ranked canonical fault matches from the knowledge base, treat them as supporting evidence, not certainty. Prefer higher-confidence ranked matches when they align with visible image/text evidence and extracted codes; use the listed reasons on the top-ranked match as evidence when relevant. If the prompt says "top matches are close in score" or "multiple faults may be plausible", preserve ambiguity—do not force a single winner when evidence is weak or conflicting. Always prioritize clearly visible image/text evidence and extracted codes over KB order. If KB support is weak or unresolved codes are listed, say so explicitly (e.g. in most_likely_problem or missing_information).
+
+EVIDENCE USE: Prefer high-trust sources (OEM, recall, electrical/VECU manual, wiring) when summarizing; use forum/discussion sources as secondary only. When evidence is strong, be specific in most_likely_problem and mechanic_guidance; when weak, state what is known vs uncertain. Avoid generic filler that does not reflect the retrieved docs.
+
+GROUNDING: Base your answer only on the provided KB block and the visible image/user message. Do not invent causes, checks, or part numbers not in the KB or clearly implied by visible codes/symptoms. If the KB block is empty or lists unresolved codes, set overall_confidence to low and state in most_likely_problem or missing_information that coverage is limited. Every claim in most_likely_problem, possible_causes, and recommended_checks should be traceable to the KB or to visible evidence.
+
+ANSWER STRUCTURE: Use most_likely_problem for likely meaning + problem summary; possible_causes for likely causes; recommended_checks_immediate for first checks; cite supporting evidence from the KB in your text; overall_confidence and missing_information for confidence/caveats (low when KB is weak or empty).
 
 Respond using the required JSON schema. Populate: image_quality (clarity: "clear", "blurry", "partial"); visible_text (only clearly legible transcribed strings); uncertain_text (any blurry, cropped, ambiguous, or partially readable text/codes—never put these only in visible_text or treat as confident); detected_codes (each with raw_code, normalized_code, code_type, confidence, interpretation); warnings_detected; fault_timestamps (capture first event, last event, and any other visible fault-time strings from the image); fault_pattern (exactly one of: "intermittent", "recurring", "persistent", "unclear"—use timestamp-based reasoning when timestamps are visible); primary_systems_involved; most_likely_problem (when uncertainty limits interpretation, say so here); possible_causes; missing_information (include "uncertain or partial image limits diagnosis" when applicable); recommended_checks_immediate (exactly 3 driver checks); recommended_checks_shop_level; driver_guidance (simple, practical, what the driver can observe or safely do—grounded in visible evidence); mechanic_guidance (technical, shop-level checks and procedures—grounded in visible codes/indicators, no overlap with driver_guidance); can_driver_continue ("yes" | "maybe" | "no"); safety_level and safety_message; overall_confidence.`
 
@@ -499,15 +525,17 @@ function formatKnowledgeContextForPrompt(ctx: KnowledgeContext): string {
     lines.push(`Notes: ${notes}`)
   }
   if (ctx.matchedDiagnosticKb?.length > 0) {
-    lines.push('Additional diagnostic KB matches (truck_diagnostic_kb):')
+    lines.push('Additional diagnostic KB matches (truck_diagnostic_kb), ordered by source trust (OEM/recall/electrical/wiring first; forum last):')
+    const sortedKb = sortDiagnosticKbByTrust(ctx.matchedDiagnosticKb)
     const take = 5
-    ctx.matchedDiagnosticKb.slice(0, take).forEach((kb, i) => {
+    sortedKb.slice(0, take).forEach((kb, i) => {
       const code = kb.display_code || kb.canonical_fault_code || 'code'
       const label = getDiagnosticKbLabel(kb)
       const part = kb.is_partial ? ' (partial match)' : ''
       lines.push(`  ${i + 1}. ${code}: ${label}${part}.`)
       if (kb.description) lines.push(`     ${kb.description.slice(0, 120)}${kb.description.length > 120 ? '…' : ''}`)
-      if (kb.provenance) lines.push(`     Source: ${kb.provenance}.`)
+      const sourceLine = formatProvenanceWithTrust(kb.provenance)
+      if (sourceLine) lines.push(`     Source: ${sourceLine}`)
     })
     if (ctx.matchedDiagnosticKb.length > take) {
       lines.push(`  (+${ctx.matchedDiagnosticKb.length - take} more from truck_diagnostic_kb.)`)
@@ -643,6 +671,12 @@ export async function POST(req: Request) {
     const imageEntry = formData.get('image')
     const image = imageEntry instanceof File ? imageEntry : null
 
+    const debugRequested =
+      formData.get('debug') === 'true' ||
+      formData.get('debug') === '1' ||
+      req.headers.get('X-THN-Debug') === 'true' ||
+      req.headers.get('X-THN-Debug') === '1'
+
     if (!message && !image) {
       return NextResponse.json(
         { error: 'message or image is required' },
@@ -746,10 +780,22 @@ export async function POST(req: Request) {
         preCallKnowledgeContext != null
           ? formatKnowledgeContextForPrompt(preCallKnowledgeContext)
           : ''
-      const groundingBlock =
+      const queryType = inferDiagnosticQueryType(extracted, message)
+      const synthesisHint = getSynthesisInstructionsForQueryType(queryType)
+      const evidenceStrengthPre = preCallKnowledgeContext
+        ? getEvidenceStrength(preCallKnowledgeContext)
+        : 'weak'
+      const weakEvidenceHint = getWeakEvidenceInstruction(evidenceStrengthPre)
+      const noMatchHint =
+        preCallKnowledgeContext ? getNoMatchLowMatchInstruction(preCallKnowledgeContext) : ''
+      const synthesisBlock =
         groundingSummary.trim().length > 0
-          ? '[Supporting context from knowledge base — use to inform your response where relevant; not definitive. Multiple matches indicate ambiguity.]\n' +
-            groundingSummary.trim() +
+          ? synthesisHint + weakEvidenceHint + noMatchHint + '\n\n' + groundingSummary.trim()
+          : synthesisHint + weakEvidenceHint + noMatchHint
+      const groundingBlock =
+        synthesisBlock.length > 0
+          ? '[Knowledge base context — use this as the primary evidence for your answer. Base your diagnosis on the items below; do not add causes or checks that are not supported by them. Multiple matches indicate ambiguity.]\n' +
+            synthesisBlock +
             '\n\n'
           : ''
 
@@ -925,10 +971,19 @@ export async function POST(req: Request) {
           knowledgeContext != null
             ? formatKnowledgeContextForPrompt(knowledgeContext)
             : ''
-        const groundingBlock =
+        const queryTypeImage = inferDiagnosticQueryType(extracted, message || '')
+        const synthesisHintImage = getSynthesisInstructionsForQueryType(queryTypeImage)
+        const evidenceStrengthImage = knowledgeContext ? getEvidenceStrength(knowledgeContext) : 'weak'
+        const weakEvidenceHintImage = getWeakEvidenceInstruction(evidenceStrengthImage)
+        const noMatchHintImage = knowledgeContext ? getNoMatchLowMatchInstruction(knowledgeContext) : ''
+        const synthesisBlockImage =
           groundingSummary.trim().length > 0
-            ? '[Supporting context from knowledge base — use to inform your response where relevant; not definitive. Multiple matches indicate ambiguity.]\n' +
-              groundingSummary.trim() +
+            ? synthesisHintImage + weakEvidenceHintImage + noMatchHintImage + '\n\n' + groundingSummary.trim()
+            : synthesisHintImage + weakEvidenceHintImage + noMatchHintImage + (groundingSummary.trim() || '')
+        const groundingBlock =
+          synthesisBlockImage.length > 0
+            ? '[Knowledge base context — use this as the primary evidence for your answer. Base your diagnosis on the items below; do not add causes or checks that are not supported by them. Multiple matches indicate ambiguity.]\n' +
+              synthesisBlockImage +
               '\n\n'
             : ''
         const extractionSummary = formatExtractionSummary(extraction)
@@ -1132,7 +1187,18 @@ export async function POST(req: Request) {
           : 'Diagnostic confidence is limited because the available evidence and knowledge-base signals are not fully aligned.'
       reply = reply + '\n\n' + honestyNote
     }
+
+    let sourcesUsed: string[] = []
+    let evidenceStrength: 'strong' | 'mixed' | 'weak' | undefined
     if (knowledgeContext) {
+      const sortedKb = sortDiagnosticKbByTrust(knowledgeContext.matchedDiagnosticKb ?? [])
+      sourcesUsed = getSourceLabelsForDisplay(sortedKb)
+      evidenceStrength = getEvidenceStrength(knowledgeContext)
+      const sourcesLine = formatSourcesLine(sourcesUsed)
+      const evidenceLine = formatEvidenceStrengthLine(evidenceStrength)
+      if (sourcesLine || evidenceLine) {
+        reply = reply + '\n\n' + [sourcesLine, evidenceLine].filter(Boolean).join('\n')
+      }
       const appendix = formatKnowledgeContextReply(knowledgeContext)
       if (appendix) {
         reply = reply + '\n\n' + appendix
@@ -1154,12 +1220,30 @@ export async function POST(req: Request) {
       unresolvedCodes: knowledgeContext?.unresolvedCodes?.length ?? 0,
     })
 
+    const isDevOrDebug =
+      process.env.NODE_ENV === 'development' || process.env.THN_DEBUG === '1' || process.env.THN_DEBUG === 'true'
+    const debugPayload =
+      debugRequested && isDevOrDebug && knowledgeContext
+        ? (() => {
+            const diagnosticKb = buildDebugInspectionKb(knowledgeContext.matchedDiagnosticKb ?? [])
+            return {
+              inspection: {
+                diagnosticKb,
+                strongestItems: getStrongestItemsForDebug(knowledgeContext.matchedDiagnosticKb ?? []),
+              },
+            }
+          })()
+        : undefined
+
     return NextResponse.json({
       reply,
       structured: diagnostic,
       knowledgeContext,
+      ...(sourcesUsed.length > 0 ? { sourcesUsed } : {}),
+      ...(evidenceStrength !== undefined ? { evidenceStrength } : {}),
       ...(typeof usedTwoPassFlow === 'boolean' ? { usedTwoPassFlow } : {}),
       diagnosticConsistency: consistencyResult,
+      ...(debugPayload ? { debug: debugPayload } : {}),
     })
   } catch (e) {
     logChatEvent('request_failed', {

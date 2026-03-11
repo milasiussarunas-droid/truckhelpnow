@@ -77,6 +77,29 @@ export interface DiagnosticTestRunOutput {
   safetyLevel?: string
   /** Whether reply contains the honesty note (when inconsistent). */
   hasHonestyNote?: boolean
+  /** Source labels returned for transparency (e.g. OEM manual, Recall / bulletin). */
+  sourcesUsed?: string[]
+  /** Evidence strength: strong / mixed / weak. */
+  evidenceStrength?: 'strong' | 'mixed' | 'weak'
+  /** When debug requested, number of KB items in inspection payload (for reviewer). */
+  debugInspectionKbCount?: number
+  /** When debug requested, KB items sent to synthesis (for faithfulness review). */
+  debugInspectionKb?: Array<{
+    order?: number
+    display_code?: string | null
+    provenance?: string | null
+    trust?: string
+    source_label?: string | null
+    snippet?: string
+  }>
+  /** When debug requested, top N items by trust (check if answer references these). */
+  debugStrongestItems?: Array<{
+    order?: number
+    display_code?: string | null
+    trust?: string
+    source_label?: string | null
+    snippet?: string
+  }>
 }
 
 /** File format: array of test cases (e.g. 20–50). */

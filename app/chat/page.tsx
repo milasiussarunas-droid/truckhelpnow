@@ -56,6 +56,10 @@ type ChatMsg = {
   content: string
   structured?: DiagnosticStructured
   knowledgeContext?: KnowledgeContextShape | null
+  /** Source labels shown in the reply (e.g. OEM manual, Recall / bulletin). */
+  sourcesUsed?: string[]
+  /** Evidence strength: strong / mixed / weak. */
+  evidenceStrength?: 'strong' | 'mixed' | 'weak'
 }
 
 const ALLOWED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp']
@@ -243,6 +247,54 @@ function StructuredAnalysisBlock({
       <p className="text-xs text-gray-500 pt-2 border-t border-gray-200">
         AI analysis is guidance only. Verify safety-critical warnings before driving.
       </p>
+    </div>
+  )
+}
+
+/** Lightweight source and evidence strength (for transparency). */
+function EvidenceSourcesBlock({
+  sourcesUsed,
+  evidenceStrength,
+}: {
+  sourcesUsed?: string[]
+  evidenceStrength?: 'strong' | 'mixed' | 'weak'
+}) {
+  const hasSources = sourcesUsed && sourcesUsed.length > 0
+  const hasStrength = evidenceStrength != null
+  if (!hasSources && !hasStrength) return null
+  return (
+    <div className="mt-3 pt-3 border-t border-gray-200">
+      <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">
+        Evidence
+      </div>
+      <div className="text-sm text-gray-700 space-y-0.5">
+        {hasSources && (
+          <p>
+            <span className="text-gray-500">Sources: </span>
+            {sourcesUsed!.join('; ')}
+          </p>
+        )}
+        {hasStrength && (
+          <p>
+            <span className="text-gray-500">Strength: </span>
+            <span
+              className={
+                evidenceStrength === 'strong'
+                  ? 'text-emerald-700'
+                  : evidenceStrength === 'mixed'
+                    ? 'text-amber-700'
+                    : 'text-gray-600'
+              }
+            >
+              {evidenceStrength === 'strong'
+                ? 'Strong (high-trust docs used)'
+                : evidenceStrength === 'mixed'
+                  ? 'Mixed (multiple or ambiguous sources)'
+                  : 'Limited (few or no matching docs)'}
+            </span>
+          </p>
+        )}
+      </div>
     </div>
   )
 }
@@ -483,6 +535,12 @@ export default function ChatPage() {
       const reply = typeof data.reply === 'string' ? data.reply : ''
       const structured = hasStructured(data) ? data.structured : undefined
       const knowledgeContext = hasKnowledgeContext(data) ? data.knowledgeContext : undefined
+      const sourcesUsed = Array.isArray((data as Record<string, unknown>).sourcesUsed)
+        ? ((data as Record<string, unknown>).sourcesUsed as string[])
+        : undefined
+      const evidenceStrength = typeof (data as Record<string, unknown>).evidenceStrength === 'string'
+        ? ((data as Record<string, unknown>).evidenceStrength as 'strong' | 'mixed' | 'weak')
+        : undefined
       const content =
         reply ||
         (structured ? `${structured.most_likely_problem || 'Analysis complete.'}${structured.safety_message ? ` ${structured.safety_message}` : ''}`.trim() : '')
@@ -493,6 +551,8 @@ export default function ChatPage() {
           content: content || 'Diagnostic analysis complete.',
           structured,
           knowledgeContext: knowledgeContext ?? null,
+          ...(sourcesUsed?.length ? { sourcesUsed } : {}),
+          ...(evidenceStrength ? { evidenceStrength } : {}),
         },
       ])
     } catch (e: unknown) {
@@ -558,9 +618,21 @@ export default function ChatPage() {
               {m.role === 'assistant' && m.structured ? (
                 <>
                   <StructuredAnalysisBlock structured={m.structured} summary={m.content} />
+                  <EvidenceSourcesBlock
+                    sourcesUsed={m.sourcesUsed}
+                    evidenceStrength={m.evidenceStrength}
+                  />
                   {m.knowledgeContext && (
                     <KnowledgeContextBlock context={m.knowledgeContext} />
                   )}
+                </>
+              ) : m.role === 'assistant' && (m.sourcesUsed?.length || m.evidenceStrength) ? (
+                <>
+                  <div className="whitespace-pre-wrap text-gray-900">{m.content}</div>
+                  <EvidenceSourcesBlock
+                    sourcesUsed={m.sourcesUsed}
+                    evidenceStrength={m.evidenceStrength}
+                  />
                 </>
               ) : (
                 <div className="whitespace-pre-wrap text-gray-900">

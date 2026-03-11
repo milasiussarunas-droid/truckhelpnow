@@ -1,0 +1,134 @@
+[
+  {
+    "id": "volvo-p1b72-exact-pcode",
+    "input": {
+      "message": "Volvo VNL. Code P1B72. What does it mean and what should I check?",
+      "hasImage": false,
+      "rawCodes": ["P1B72"],
+      "suspectedBrand": "Volvo"
+    },
+    "expected": {
+      "primarySubsystems": [],
+      "replyContainsPhrases": [],
+      "acknowledgesUnresolved": false,
+      "expectHonestyNoteWhenInconsistent": true
+    },
+    "notes": "Exact OBD/P-code query. After synthesis: answer should structure as (1) what code means (2) likely causes (3) what to check first (4) supporting evidence from KB (5) confidence/caveats. Compare reply structure before vs after synthesis changes."
+  },
+  {
+    "id": "volvo-p04d900-exact-pcode",
+    "input": {
+      "message": "I have P04D900 on my Volvo. What is it?",
+      "hasImage": false,
+      "rawCodes": ["P04D900"],
+      "suspectedBrand": "Volvo"
+    },
+    "expected": {
+      "primarySubsystems": [],
+      "replyContainsPhrases": [],
+      "acknowledgesUnresolved": false,
+      "expectHonestyNoteWhenInconsistent": true
+    },
+    "notes": "Exact P-code. Expect synthesis to use retrieved Volvo evidence; prefer OEM/recall/electrical over forum when summarizing."
+  },
+  {
+    "id": "volvo-spn-fmi-representative",
+    "input": {
+      "message": "SPN 3710 FMI 2 on a Volvo. What are the likely causes and what should the shop check?",
+      "hasImage": false,
+      "rawCodes": ["SPN 3710 FMI 2"],
+      "suspectedBrand": "Volvo"
+    },
+    "expected": {
+      "primarySubsystems": [],
+      "replyContainsPhrases": [],
+      "acknowledgesUnresolved": false,
+      "expectHonestyNoteWhenInconsistent": true
+    },
+    "notes": "SPN/FMI query. Answer should reflect SPN/FMI interpretation, likely causes, inspect/check first, evidence from docs, confidence/caveats."
+  },
+  {
+    "id": "volvo-vecu-section3-electrical",
+    "input": {
+      "message": "Volvo VECU section 3 electrical issue — no communication with EECU. Where do I look in the wiring?",
+      "hasImage": false,
+      "rawCodes": [],
+      "suspectedBrand": "Volvo"
+    },
+    "expected": {
+      "primarySubsystems": ["electrical"],
+      "replyContainsPhrases": [],
+      "acknowledgesUnresolved": false,
+      "expectHonestyNoteWhenInconsistent": true
+    },
+    "notes": "Electrical/VECU/section query. Synthesis should prioritize electrical_ecu_manual and wiring docs; forum as secondary. Focus on circuit, connector, harness."
+  },
+  {
+    "id": "volvo-weak-unknown-code",
+    "input": {
+      "message": "Volvo. Code P2BAD. What does it mean?",
+      "hasImage": false,
+      "rawCodes": ["P2BAD"],
+      "suspectedBrand": "Volvo"
+    },
+    "expected": {
+      "acknowledgesUnresolved": true,
+      "expectHonestyNoteWhenInconsistent": true
+    },
+    "notes": "Weak query: rare/unknown P-code; likely no or few KB hits. Answer should state what is supported, what is uncertain, and what additional info would help; avoid generic filler."
+  },
+  {
+    "id": "volvo-weak-symptom-no-code",
+    "input": {
+      "message": "Volvo truck sometimes loses power on hills. No codes. Where do I start?",
+      "hasImage": false,
+      "rawCodes": [],
+      "suspectedBrand": "Volvo"
+    },
+    "expected": {
+      "expectHonestyNoteWhenInconsistent": true
+    },
+    "notes": "Weak query: symptom only, no code; coverage may be minimal. Answer should explicitly say what is supported vs uncertain and what codes/info would help."
+  },
+  {
+    "id": "volvo-weak-rare-spn-fmi",
+    "input": {
+      "message": "SPN 9999 FMI 31 on a Volvo. What is it?",
+      "hasImage": false,
+      "rawCodes": ["SPN 9999 FMI 31"],
+      "suspectedBrand": "Volvo"
+    },
+    "expected": {
+      "acknowledgesUnresolved": true,
+      "expectHonestyNoteWhenInconsistent": true
+    },
+    "notes": "Weak query: unlikely SPN/FMI in KB. Expect limited coverage; answer should state uncertainty and what would help (e.g. exact code from scanner)."
+  },
+  {
+    "id": "volvo-low-match-d13-partial",
+    "input": {
+      "message": "Volvo D13 engine fault. Dash shows a code but I only caught part of it — might be 3710 or 3711. What should I do?",
+      "hasImage": false,
+      "rawCodes": [],
+      "suspectedBrand": "Volvo"
+    },
+    "expected": {
+      "expectHonestyNoteWhenInconsistent": true
+    },
+    "notes": "Low-match: partial D13/engine code; may or may not have KB hit. Answer should separate what is supported vs not covered; suggest full code or subcode from scanner; no invented exact causes."
+  },
+  {
+    "id": "volvo-no-match-rare-pcode",
+    "input": {
+      "message": "Volvo VNL 2022. Code P1A9F came up. What does it mean?",
+      "hasImage": false,
+      "rawCodes": ["P1A9F"],
+      "suspectedBrand": "Volvo"
+    },
+    "expected": {
+      "acknowledgesUnresolved": true,
+      "expectHonestyNoteWhenInconsistent": true
+    },
+    "notes": "No-match: rare OBD/P-code; likely no direct KB hit. Answer must not invent exact causes; state what is supported, what is not covered, what would narrow it down; useful next-step guidance."
+  }
+]
