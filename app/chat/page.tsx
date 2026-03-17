@@ -1,6 +1,7 @@
 'use client'
 
 import Image from 'next/image'
+import Link from 'next/link'
 import {
   useEffect,
   useRef,
@@ -8,6 +9,7 @@ import {
   type ChangeEvent,
   type KeyboardEvent,
 } from 'react'
+import { brandSeoEntries, faultSeoEntries } from '@/lib/diagnostics/seo-content'
 
 type DetectedCodeItem = {
   raw_code: string
@@ -89,6 +91,67 @@ const SAFETY_ITEMS = [
   'Brake, steering, overheating, fire risk, fuel leak, or low air pressure concerns should be treated as stop-now events.',
   'If warning lamps changed after a recent repair, include that context so the assistant can narrow likely causes faster.',
   'Photos work best when the full fault code area is sharp, bright, and free of glare.',
+]
+
+const chatFeaturedFaults = faultSeoEntries.slice(0, 3)
+
+const CHAT_FAQS = [
+  {
+    question: 'What should I include in a truck diagnostic chat?',
+    answer:
+      'Start with the truck year, make, model, engine, the exact symptom, when it happens, and any SPN/FMI or OEM fault codes shown on the dash or scanner.',
+  },
+  {
+    question: 'Can I use TruckHelpNow for dashboard photo analysis?',
+    answer:
+      'Yes. The chat accepts dashboard and scan-tool images so the assistant can pull visible text, fault codes, and warning-light context into the response.',
+  },
+  {
+    question: 'When should a truck be parked instead of driven farther?',
+    answer:
+      'Brake issues, steering concerns, severe overheating, fire risk, fuel leaks, wheel-end issues, and low-air warnings should be treated as stop-now events until the truck is verified safe.',
+  },
+]
+
+const chatJsonLd = [
+  {
+    '@context': 'https://schema.org',
+    '@type': 'WebPage',
+    name: 'Truck Diagnostic Chat',
+    description:
+      'Interactive truck diagnostic chat for SPN/FMI fault codes, warning lights, and dashboard-photo analysis.',
+    url: 'https://truckhelpnow.com/chat',
+  },
+  {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      {
+        '@type': 'ListItem',
+        position: 1,
+        name: 'Home',
+        item: 'https://truckhelpnow.com/',
+      },
+      {
+        '@type': 'ListItem',
+        position: 2,
+        name: 'Truck Diagnostic Chat',
+        item: 'https://truckhelpnow.com/chat',
+      },
+    ],
+  },
+  {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: CHAT_FAQS.map((faq) => ({
+      '@type': 'Question',
+      name: faq.question,
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: faq.answer,
+      },
+    })),
+  },
 ]
 
 function getImageValidationError(file: File): string | null {
@@ -770,18 +833,29 @@ export default function ChatPage() {
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.16),_transparent_28%),linear-gradient(180deg,_rgba(2,6,23,0.98)_0%,_rgba(2,6,23,1)_100%)]">
+      {chatJsonLd.map((entry, index) => (
+        <script
+          key={index}
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(entry) }}
+        />
+      ))}
       <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
         <header className="rounded-[28px] border border-white/10 bg-slate-950/80 p-5 shadow-[0_24px_80px_rgba(2,6,23,0.45)] backdrop-blur-xl">
           <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
             <div className="flex items-start gap-4">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-emerald-400/30 bg-emerald-400/10 text-sm font-semibold text-emerald-100 shadow-inner shadow-emerald-400/10">
+              <Link
+                href="/"
+                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-emerald-400/30 bg-emerald-400/10 text-sm font-semibold text-emerald-100 shadow-inner shadow-emerald-400/10 transition hover:border-emerald-300/50 hover:bg-emerald-400/20"
+                aria-label="Go to TruckHelpNow home"
+              >
                 TH
-              </div>
+              </Link>
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-semibold tracking-tight text-white">
+                  <Link href="/" className="text-sm font-semibold tracking-tight text-white transition hover:text-emerald-200">
                     TruckHelpNow
-                  </p>
+                  </Link>
                   <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[0.68rem] font-medium uppercase tracking-[0.18em] text-slate-300">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
                     AI diagnostic workspace
@@ -800,21 +874,44 @@ export default function ChatPage() {
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-              <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[0.68rem] font-medium uppercase tracking-[0.18em] text-slate-300">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                {caseId ? 'Case active' : 'Ready to start'}
-              </span>
-              <span className="inline-flex items-center rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-[0.68rem] font-medium uppercase tracking-[0.18em] text-emerald-100">
-                Image-aware
-              </span>
-              <button
-                type="button"
-                onClick={resetChat}
-                className="inline-flex items-center justify-center rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-slate-100 transition hover:border-white/20 hover:bg-white/10"
-              >
-                New chat
-              </button>
+            <div className="flex flex-col gap-3 xl:items-end">
+              <nav aria-label="Chat page navigation" className="flex flex-wrap gap-2 xl:justify-end">
+                <Link
+                  href="/fault-codes"
+                  className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-100 transition hover:border-white/20 hover:bg-white/10"
+                >
+                  Fault codes
+                </Link>
+                <Link
+                  href="/brands"
+                  className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-100 transition hover:border-white/20 hover:bg-white/10"
+                >
+                  Brands
+                </Link>
+                <Link
+                  href="/"
+                  className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-100 transition hover:border-white/20 hover:bg-white/10"
+                >
+                  Home
+                </Link>
+              </nav>
+
+              <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+                <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[0.68rem] font-medium uppercase tracking-[0.18em] text-slate-300">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                  {caseId ? 'Case active' : 'Ready to start'}
+                </span>
+                <span className="inline-flex items-center rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-[0.68rem] font-medium uppercase tracking-[0.18em] text-emerald-100">
+                  Image-aware
+                </span>
+                <button
+                  type="button"
+                  onClick={resetChat}
+                  className="inline-flex items-center justify-center rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-slate-100 transition hover:border-white/20 hover:bg-white/10"
+                >
+                  New chat
+                </button>
+              </div>
             </div>
           </div>
         </header>
@@ -872,7 +969,7 @@ export default function ChatPage() {
                       low-risk checks, and safety-minded next steps.
                     </p>
 
-                    <div className="mt-6 grid gap-3 md:grid-cols-3">
+                    <div className="mt-6 space-y-3">
                       <div className="rounded-2xl border border-white/10 bg-slate-950/55 p-4">
                         <p className="text-sm font-semibold text-white">Symptoms</p>
                         <p className="mt-2 text-sm leading-6 text-slate-300">
@@ -1235,6 +1332,106 @@ export default function ChatPage() {
             </div>
           </aside>
         </div>
+
+        <section aria-labelledby="chat-topics" className="rounded-[28px] border border-white/10 bg-slate-950/75 p-5 shadow-[0_24px_80px_rgba(2,6,23,0.45)] backdrop-blur-xl sm:p-6">
+          <div className="max-w-3xl">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-slate-500">
+              What this page covers
+            </p>
+            <h2 id="chat-topics" className="mt-3 text-2xl font-semibold tracking-tight text-white">
+              Use the chat for truck fault codes, warning lights, and symptom-based troubleshooting
+            </h2>
+            <p className="mt-3 text-sm leading-7 text-slate-300 sm:text-base">
+              This page is built for real truck-diagnostic searches like truck fault code help, semi-truck warning light questions, and commercial truck troubleshooting when the issue still needs fast context before a shop visit.
+            </p>
+          </div>
+
+          <div className="mt-8 grid gap-4 md:grid-cols-3">
+            {chatFeaturedFaults.map((fault) => (
+              <article key={fault.code} className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-emerald-200/80">
+                  {fault.severityLabel}
+                </p>
+                <h3 className="mt-3 text-lg font-semibold text-white">{fault.code}</h3>
+                <p className="mt-2 text-sm text-emerald-300">{fault.title}</p>
+                <p className="mt-3 text-sm leading-6 text-slate-300">{fault.description}</p>
+                <Link
+                  href={fault.href}
+                  className="mt-4 inline-flex text-sm font-medium text-emerald-300 transition hover:text-emerald-200"
+                >
+                  View fault details
+                </Link>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section aria-labelledby="supported-brands" className="rounded-[28px] border border-white/10 bg-slate-950/75 p-5 shadow-[0_24px_80px_rgba(2,6,23,0.45)] backdrop-blur-xl sm:p-6">
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+            <div>
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                Supported entry pages
+              </p>
+              <h2 id="supported-brands" className="mt-3 text-2xl font-semibold tracking-tight text-white">
+                Brand pages for common heavy-truck diagnostic searches
+              </h2>
+              <p className="mt-3 text-sm leading-7 text-slate-300 sm:text-base">
+                TruckHelpNow also publishes focused brand pages for common search intent around Volvo, Freightliner, Kenworth, and International truck diagnostics.
+              </p>
+              <div className="mt-5 flex flex-wrap gap-2">
+                {brandSeoEntries.map((brand) => (
+                  <Link
+                    key={brand.slug}
+                    href={brand.href}
+                    className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100 transition hover:border-white/20 hover:bg-white/10"
+                  >
+                    {brand.name}
+                  </Link>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                Best SEO use of this tool
+              </p>
+              <ul className="mt-4 space-y-3">
+                <li className="flex gap-3 text-sm leading-6 text-slate-300">
+                  <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-emerald-400" />
+                  <span>Paste the exact fault code instead of only describing a light.</span>
+                </li>
+                <li className="flex gap-3 text-sm leading-6 text-slate-300">
+                  <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-emerald-400" />
+                  <span>Include when the symptom appears: startup, idle, regen, hill load, or highway speed.</span>
+                </li>
+                <li className="flex gap-3 text-sm leading-6 text-slate-300">
+                  <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-emerald-400" />
+                  <span>Upload a dashboard or scan-tool image when the code is easier to show than type.</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <section aria-labelledby="chat-faq" className="rounded-[28px] border border-white/10 bg-slate-950/75 p-5 shadow-[0_24px_80px_rgba(2,6,23,0.45)] backdrop-blur-xl sm:p-6">
+          <div className="max-w-3xl">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-slate-500">
+              FAQ
+            </p>
+            <h2 id="chat-faq" className="mt-3 text-2xl font-semibold tracking-tight text-white">
+              Questions drivers ask before opening a truck diagnostic chat
+            </h2>
+          </div>
+
+          <div className="mt-8 grid gap-4 md:grid-cols-3">
+            {CHAT_FAQS.map((faq) => (
+              <article key={faq.question} className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+                <h3 className="text-base font-semibold text-white">{faq.question}</h3>
+                <p className="mt-3 text-sm leading-7 text-slate-300">{faq.answer}</p>
+              </article>
+            ))}
+          </div>
+        </section>
       </div>
     </main>
   )
