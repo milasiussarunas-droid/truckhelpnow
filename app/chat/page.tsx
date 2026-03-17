@@ -1,6 +1,13 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import Image from 'next/image'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent,
+} from 'react'
 
 type DetectedCodeItem = {
   raw_code: string
@@ -56,10 +63,33 @@ type ChatMsg = {
   content: string
   structured?: DiagnosticStructured
   knowledgeContext?: KnowledgeContextShape | null
+  attachmentName?: string
 }
 
 const ALLOWED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp']
 const MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024 // 8 MB
+
+const WELCOME_MESSAGE =
+  'Hi — tell me the truck year, make, model, engine, and what symptoms you have. If you have fault codes (SPN/FMI), paste them. You can also upload a photo of your dashboard or scan tool screen.'
+
+const SUGGESTED_PROMPTS = [
+  'Freightliner Cascadia losing power on hills with SPN 4364 FMI 18.',
+  'Volvo VNL has intermittent air pressure warning after startup. What should I check first?',
+  'Review this dashboard photo and tell me whether it is safe to keep driving.',
+]
+
+const CHECKLIST_ITEMS = [
+  'Truck year, make, model, and engine',
+  'What changed first: power, temperature, pressure, smoke, or noise',
+  'Any SPN/FMI or OEM fault codes shown',
+  'A clear photo of the dash or scanner if you have one',
+]
+
+const SAFETY_ITEMS = [
+  'Brake, steering, overheating, fire risk, fuel leak, or low air pressure concerns should be treated as stop-now events.',
+  'If warning lamps changed after a recent repair, include that context so the assistant can narrow likely causes faster.',
+  'Photos work best when the full fault code area is sharp, bright, and free of glare.',
+]
 
 function getImageValidationError(file: File): string | null {
   if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
@@ -80,6 +110,13 @@ function toFriendlyErrorMessage(backendError: string): string {
   }
   if (backendError.includes('message or image')) {
     return 'Please enter a message or attach an image.'
+  }
+  if (
+    backendError.includes('Failed to create case') ||
+    backendError.includes('Supabase') ||
+    backendError.includes('fetch failed')
+  ) {
+    return 'Unable to start a case right now. Please try again in a moment.'
   }
   if (backendError.includes('OpenAI') || backendError.includes('API key')) {
     return 'Analysis is temporarily unavailable. Please try again later.'
@@ -107,6 +144,64 @@ function hasKnowledgeContext(data: unknown): data is { knowledgeContext: Knowled
   return k !== undefined && k !== null && typeof k === 'object' && !Array.isArray(k)
 }
 
+function getConfidenceClasses(level: 'low' | 'medium' | 'high') {
+  if (level === 'high') {
+    return 'border-emerald-400/30 bg-emerald-400/10 text-emerald-100'
+  }
+  if (level === 'medium') {
+    return 'border-amber-400/30 bg-amber-400/10 text-amber-100'
+  }
+  return 'border-white/10 bg-white/5 text-slate-200'
+}
+
+function getSafetyClasses(level: 'low' | 'medium' | 'high') {
+  if (level === 'high') {
+    return {
+      badge: 'border-red-400/30 bg-red-400/10 text-red-100',
+      card: 'border-red-400/25 bg-red-400/10',
+    }
+  }
+  if (level === 'medium') {
+    return {
+      badge: 'border-amber-400/30 bg-amber-400/10 text-amber-100',
+      card: 'border-amber-400/20 bg-amber-400/10',
+    }
+  }
+  return {
+    badge: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-100',
+    card: 'border-emerald-400/20 bg-emerald-400/10',
+  }
+}
+
+function getDriveStatusClasses(status: 'yes' | 'maybe' | 'no') {
+  if (status === 'no') {
+    return 'border-red-400/30 bg-red-400/10 text-red-100'
+  }
+  if (status === 'maybe') {
+    return 'border-amber-400/30 bg-amber-400/10 text-amber-100'
+  }
+  return 'border-emerald-400/30 bg-emerald-400/10 text-emerald-100'
+}
+
+function MetaBadge({
+  label,
+  value,
+  className,
+}: {
+  label: string
+  value: string
+  className: string
+}) {
+  return (
+    <div
+      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[0.7rem] font-medium uppercase tracking-[0.18em] ${className}`}
+    >
+      <span className="text-slate-400">{label}</span>
+      <span>{value}</span>
+    </div>
+  )
+}
+
 /** Renders a section only when there is content; avoids empty noisy sections. */
 function Section({
   label,
@@ -118,25 +213,30 @@ function Section({
   if (Array.isArray(value)) {
     if (value.length === 0) return null
     return (
-      <div className="mb-3 last:mb-0">
-        <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+        <div className="mb-2 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-slate-400">
           {label}
         </div>
-        <ul className="list-disc list-inside text-gray-900 space-y-0.5 text-sm">
+        <ul className="space-y-2 text-sm leading-6 text-slate-100">
           {value.map((item, i) => (
-            <li key={i}>{item}</li>
+            <li key={i} className="flex gap-2">
+              <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-300" />
+              <span>{item}</span>
+            </li>
           ))}
         </ul>
       </div>
     )
   }
+
   if (!value || !String(value).trim()) return null
+
   return (
-    <div className="mb-3 last:mb-0">
-      <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+      <div className="mb-2 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-slate-400">
         {label}
       </div>
-      <div className="text-gray-900 text-sm whitespace-pre-wrap">{value}</div>
+      <div className="whitespace-pre-wrap text-sm leading-6 text-slate-100">{value}</div>
     </div>
   )
 }
@@ -148,51 +248,89 @@ function StructuredAnalysisBlock({
   structured: DiagnosticStructured
   summary: string
 }) {
-  const safetyClass =
-    structured.safety_level === 'high'
-      ? 'border-amber-300 bg-amber-50'
-      : structured.safety_level === 'medium'
-        ? 'border-yellow-200 bg-yellow-50'
-        : 'border-gray-200 bg-gray-50'
+  const safetyTone = getSafetyClasses(structured.safety_level)
 
   return (
-    <div className="space-y-3 text-gray-900">
+    <div className="space-y-4 text-slate-100">
       {summary ? (
-        <div className="whitespace-pre-wrap text-sm mb-3 pb-3 border-b border-gray-200">
-          {summary}
+        <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-4">
+          <div className="mb-2 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-slate-400">
+            Assessment summary
+          </div>
+          <p className="whitespace-pre-wrap text-sm leading-6 text-slate-100">{summary}</p>
         </div>
       ) : null}
 
-      <Section label="Visible text" value={structured.visible_text} />
-      <Section label="Uncertain / unreadable text" value={structured.uncertain_text} />
+      <div className="flex flex-wrap gap-2">
+        <MetaBadge
+          label="Safety"
+          value={structured.safety_level}
+          className={safetyTone.badge}
+        />
+        <MetaBadge
+          label="Confidence"
+          value={structured.overall_confidence}
+          className={getConfidenceClasses(structured.overall_confidence)}
+        />
+        <MetaBadge
+          label="Driver status"
+          value={structured.can_driver_continue}
+          className={getDriveStatusClasses(structured.can_driver_continue)}
+        />
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        <Section label="Most likely problem" value={structured.most_likely_problem} />
+        <Section label="Primary systems involved" value={structured.primary_systems_involved} />
+        <Section label="Possible causes" value={structured.possible_causes} />
+        <Section label="Immediate checks" value={structured.recommended_checks_immediate} />
+        <Section label="Shop-level checks" value={structured.recommended_checks_shop_level} />
+        <Section label="Driver guidance" value={structured.driver_guidance} />
+        <Section label="Mechanic guidance" value={structured.mechanic_guidance} />
+        <Section label="Missing information" value={structured.missing_information} />
+        <Section label="Warning lights" value={structured.warnings_detected} />
+        <Section label="Fault timestamps" value={structured.fault_timestamps} />
+        <Section label="Fault pattern" value={structured.fault_pattern} />
+        <Section label="Visible text" value={structured.visible_text} />
+        <Section
+          label="Uncertain or unreadable text"
+          value={structured.uncertain_text}
+        />
+      </div>
 
       {structured.detected_codes.length > 0 ? (
-        <div className="mb-3 last:mb-0">
-          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+          <div className="mb-3 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-slate-400">
             Detected codes
           </div>
-          <div className="space-y-2">
+          <div className="space-y-3">
             {structured.detected_codes.map((code, i) => (
               <div
                 key={i}
-                className="rounded-lg border border-gray-200 bg-white p-2.5 shadow-sm"
+                className="rounded-2xl border border-white/10 bg-slate-950/60 p-4"
               >
-                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                  <span className="font-mono text-sm font-semibold text-gray-900">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 font-mono text-sm font-semibold text-slate-50">
                     {code.raw_code}
                   </span>
-                  {code.normalized_code && code.normalized_code !== code.raw_code && (
-                    <span className="font-mono text-xs text-gray-600">
-                      → {code.normalized_code}
+                  {code.normalized_code && code.normalized_code !== code.raw_code ? (
+                    <span className="font-mono text-xs text-slate-400">
+                      normalized {code.normalized_code}
                     </span>
-                  )}
-                  {code.code_type ? (
-                    <span className="text-xs text-gray-500">({code.code_type})</span>
                   ) : null}
-                  <span className="text-xs text-gray-400 ml-auto">Confidence: {code.confidence}</span>
+                  {code.code_type ? (
+                    <span className="text-xs uppercase tracking-[0.16em] text-slate-500">
+                      {code.code_type}
+                    </span>
+                  ) : null}
+                  <span
+                    className={`ml-auto rounded-full border px-2.5 py-1 text-[0.68rem] font-medium uppercase tracking-[0.18em] ${getConfidenceClasses(code.confidence)}`}
+                  >
+                    {code.confidence}
+                  </span>
                 </div>
                 {code.interpretation ? (
-                  <p className="text-sm text-gray-700 mt-1.5 leading-snug">
+                  <p className="mt-3 text-sm leading-6 text-slate-200">
                     {code.interpretation}
                   </p>
                 ) : null}
@@ -202,47 +340,19 @@ function StructuredAnalysisBlock({
         </div>
       ) : null}
 
-      <Section label="Warning lights" value={structured.warnings_detected} />
-      <Section label="Fault timestamps" value={structured.fault_timestamps} />
-      <Section label="Fault pattern" value={structured.fault_pattern} />
-      <Section label="Primary systems involved" value={structured.primary_systems_involved} />
-      <Section label="Most likely problem" value={structured.most_likely_problem} />
-      <Section label="Possible causes" value={structured.possible_causes} />
-      <Section label="Immediate checks" value={structured.recommended_checks_immediate} />
-      <Section label="Shop-level checks" value={structured.recommended_checks_shop_level} />
-      <Section label="Driver guidance" value={structured.driver_guidance} />
-      <Section label="Mechanic guidance" value={structured.mechanic_guidance} />
-      <Section label="Missing information" value={structured.missing_information} />
-
       {(structured.safety_message || structured.safety_level) ? (
-        <div
-          className={`rounded-lg border p-3 ${safetyClass}`}
-          role="alert"
-        >
-          <div className="text-xs font-medium text-gray-600 uppercase tracking-wide mb-1">
-            Safety
+        <div className={`rounded-2xl border p-4 ${safetyTone.card}`} role="alert">
+          <div className="mb-2 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-slate-100/80">
+            Safety guidance
           </div>
           {structured.safety_message ? (
-            <div className="text-sm">{structured.safety_message}</div>
+            <p className="text-sm leading-6 text-slate-50">{structured.safety_message}</p>
           ) : null}
-          {structured.can_driver_continue ? (
-            <p className="text-xs text-gray-600 mt-1.5">
-              Can driver continue: {structured.can_driver_continue}
-            </p>
-          ) : null}
+          <p className="mt-3 text-xs text-slate-200/80">
+            AI guidance only. Verify safety-critical warnings before driving.
+          </p>
         </div>
       ) : null}
-
-      {structured.overall_confidence ? (
-        <div className="text-xs text-gray-500">
-          <span className="font-medium uppercase tracking-wide">Overall confidence:</span>{' '}
-          {structured.overall_confidence}
-        </div>
-      ) : null}
-
-      <p className="text-xs text-gray-500 pt-2 border-t border-gray-200">
-        AI analysis is guidance only. Verify safety-critical warnings before driving.
-      </p>
     </div>
   )
 }
@@ -261,101 +371,199 @@ function KnowledgeContextBlock({ context }: { context: KnowledgeContextShape }) 
 
   const topRanked = ranked.slice(0, 3)
   const showRanked = topRanked.length > 0
-  const topTwoClose = showRanked && topRanked.length >= 2 && (topRanked[0].score - topRanked[1].score) <= 8
+  const topTwoClose =
+    showRanked && topRanked.length >= 2 && topRanked[0].score - topRanked[1].score <= 8
 
-  if (!hasBrand && !hasModules && !hasFaults && !hasProcedures && !hasUnresolved && !hasConfidence && !hasSummary) {
+  if (
+    !hasBrand &&
+    !hasModules &&
+    !hasFaults &&
+    !hasProcedures &&
+    !hasUnresolved &&
+    !hasConfidence &&
+    !hasSummary
+  ) {
     return null
   }
 
   return (
-    <div className="mt-3 pt-3 border-t border-gray-200">
-      <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
-        From knowledge base
+    <div className="rounded-2xl border border-sky-400/20 bg-sky-400/10 p-4">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <span className="rounded-full border border-sky-400/25 bg-sky-400/10 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-sky-100">
+          Supporting evidence
+        </span>
+        <span className="text-xs text-sky-100/80">
+          Context pulled from the diagnostic knowledge base
+        </span>
       </div>
-      <div className="space-y-2 text-sm text-gray-700">
-        {hasBrand && (
-          <div>
-            <span className="text-gray-500">Brand: </span>
-            {context.matchedBrand!.name ?? context.matchedBrand!.slug}
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        {hasBrand ? (
+          <div className="rounded-2xl border border-white/10 bg-slate-950/35 p-4">
+            <div className="mb-2 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-sky-100/80">
+              Brand
+            </div>
+            <div className="text-sm text-slate-50">
+              {context.matchedBrand!.name ?? context.matchedBrand!.slug}
+            </div>
           </div>
-        )}
-        {hasModules && (
-          <div>
-            <span className="text-gray-500">ECU modules: </span>
-            {context.matchedModules!.map((m) => m.code ?? m.name).filter(Boolean).join(', ') || '—'}
+        ) : null}
+
+        {hasModules ? (
+          <div className="rounded-2xl border border-white/10 bg-slate-950/35 p-4">
+            <div className="mb-2 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-sky-100/80">
+              ECU modules
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {context.matchedModules!
+                .map((module) => module.code ?? module.name)
+                .filter(Boolean)
+                .map((module) => (
+                  <span
+                    key={module}
+                    className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-100"
+                  >
+                    {module}
+                  </span>
+                ))}
+            </div>
           </div>
-        )}
-        {hasFaults && (
-          <div>
-            <span className="text-gray-500">Matched faults{showRanked ? ' (by relevance)' : ''}: </span>
-            <ul className="list-disc list-inside mt-0.5 space-y-1">
-              {showRanked
-                ? topRanked.map((r, i) => (
-                    <li key={i} className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
-                      <span className="font-mono">{r.fault.code ?? '—'}</span>
-                      {r.fault.title ? <span>— {r.fault.title}</span> : null}
-                      <span className="inline-flex items-center gap-1 flex-wrap">
-                        <span className={`text-xs px-1.5 py-0.5 rounded ${r.confidence === 'high' ? 'bg-emerald-100 text-emerald-800' : r.confidence === 'medium' ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-600'}`}>
-                          {r.confidence}
-                        </span>
-                        {r.reasons.slice(0, 2).map((reason, j) => (
-                          <span key={j} className="text-xs text-gray-500">· {reason}</span>
-                        ))}
+        ) : null}
+      </div>
+
+      {hasFaults ? (
+        <div className="mt-3 rounded-2xl border border-white/10 bg-slate-950/35 p-4">
+          <div className="mb-3 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-sky-100/80">
+            Matched faults{showRanked ? ' by relevance' : ''}
+          </div>
+          <div className="space-y-3">
+            {showRanked
+              ? topRanked.map((rankedFault, i) => (
+                  <div
+                    key={i}
+                    className="rounded-2xl border border-white/10 bg-white/[0.03] p-3"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-sm font-semibold text-slate-50">
+                        {rankedFault.fault.code ?? '—'}
                       </span>
-                    </li>
-                  ))
-                : flatFaults.map((f, i) => (
-                    <li key={i}>
-                      <span className="font-mono">{f.code ?? '—'}</span>
-                      {f.title ? ` — ${f.title}` : ''}
-                    </li>
-                  ))}
-            </ul>
-            {showRanked && ranked.length > 3 && (
-              <span className="text-xs text-gray-500 mt-0.5 block">+{ranked.length - 3} more in knowledge base</span>
-            )}
-            {topTwoClose && (
-              <p className="text-xs text-amber-700 mt-1">Top matches are close; consider multiple.</p>
-            )}
+                      {rankedFault.fault.title ? (
+                        <span className="text-sm text-slate-200">
+                          {rankedFault.fault.title}
+                        </span>
+                      ) : null}
+                      <span
+                        className={`ml-auto rounded-full border px-2.5 py-1 text-[0.68rem] font-medium uppercase tracking-[0.18em] ${getConfidenceClasses(rankedFault.confidence)}`}
+                      >
+                        {rankedFault.confidence}
+                      </span>
+                    </div>
+                    {rankedFault.reasons.length > 0 ? (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {rankedFault.reasons.slice(0, 3).map((reason) => (
+                          <span
+                            key={reason}
+                            className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-slate-200"
+                          >
+                            {reason}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ))
+              : flatFaults.map((fault, i) => (
+                  <div
+                    key={i}
+                    className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-100"
+                  >
+                    <span className="font-mono font-semibold">{fault.code ?? '—'}</span>
+                    {fault.title ? <span className="text-slate-300"> — {fault.title}</span> : null}
+                  </div>
+                ))}
           </div>
-        )}
-        {hasProcedures && (
-          <div>
-            <span className="text-gray-500">Procedures: </span>
-            <ul className="list-disc list-inside mt-0.5 space-y-0.5">
-              {context.matchedProcedures!.map((p, i) => (
-                <li key={i}>{p.title ?? '—'}</li>
+          {showRanked && ranked.length > 3 ? (
+            <p className="mt-3 text-xs text-slate-300">+{ranked.length - 3} more relevant fault matches available.</p>
+          ) : null}
+          {topTwoClose ? (
+            <p className="mt-2 text-xs text-amber-100">
+              Top matches are close. Consider multiple candidate causes before replacing parts.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+        {hasProcedures ? (
+          <div className="rounded-2xl border border-white/10 bg-slate-950/35 p-4">
+            <div className="mb-2 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-sky-100/80">
+              Suggested procedures
+            </div>
+            <ul className="space-y-2 text-sm text-slate-100">
+              {context.matchedProcedures!.map((procedure, i) => (
+                <li key={i} className="flex gap-2">
+                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-sky-300" />
+                  <span>{procedure.title ?? '—'}</span>
+                </li>
               ))}
             </ul>
           </div>
-        )}
-        {hasUnresolved && (
-          <div>
-            <span className="text-gray-500">Unresolved codes: </span>
-            {context.unresolvedCodes!.join(', ')}
-          </div>
-        )}
-        {hasConfidence && (
-          <div>
-            <span className="text-gray-500">Notes: </span>
-            <ul className="list-disc list-inside mt-0.5 space-y-0.5">
-              {context.confidenceNotes!.map((n, i) => (
-                <li key={i}>{n}</li>
+        ) : null}
+
+        {hasUnresolved ? (
+          <div className="rounded-2xl border border-white/10 bg-slate-950/35 p-4">
+            <div className="mb-2 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-sky-100/80">
+              Unresolved codes
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {context.unresolvedCodes!.map((code) => (
+                <span
+                  key={code}
+                  className="rounded-full border border-white/10 bg-white/5 px-3 py-1 font-mono text-xs text-slate-100"
+                >
+                  {code}
+                </span>
               ))}
-            </ul>
+            </div>
           </div>
-        )}
-        {hasSummary && (
-          <div>
-            <span className="text-gray-500">Summary: </span>
-            <ul className="list-disc list-inside mt-0.5 space-y-0.5">
-              {context.evidenceSummary!.map((s, i) => (
-                <li key={i}>{s}</li>
-              ))}
-            </ul>
-          </div>
-        )}
+        ) : null}
       </div>
+
+      {(hasConfidence || hasSummary) ? (
+        <div className="mt-3 grid gap-3 lg:grid-cols-2">
+          {hasConfidence ? (
+            <div className="rounded-2xl border border-white/10 bg-slate-950/35 p-4">
+              <div className="mb-2 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-sky-100/80">
+                Confidence notes
+              </div>
+              <ul className="space-y-2 text-sm text-slate-100">
+                {context.confidenceNotes!.map((note, i) => (
+                  <li key={i} className="flex gap-2">
+                    <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-sky-300" />
+                    <span>{note}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {hasSummary ? (
+            <div className="rounded-2xl border border-white/10 bg-slate-950/35 p-4">
+              <div className="mb-2 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-sky-100/80">
+                Evidence summary
+              </div>
+              <ul className="space-y-2 text-sm text-slate-100">
+                {context.evidenceSummary!.map((summary, i) => (
+                  <li key={i} className="flex gap-2">
+                    <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-sky-300" />
+                    <span>{summary}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -368,14 +576,23 @@ export default function ChatPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [imageError, setImageError] = useState<string | null>(null)
+  const [chatError, setChatError] = useState<string | null>(null)
   const [loadingMessage, setLoadingMessage] = useState<string>('Thinking…')
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const previewUrlRef = useRef<string | null>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
+
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = '0px'
+    el.style.height = `${Math.min(el.scrollHeight, 180)}px`
+  }, [input])
 
   // Revoke object URL on unmount to avoid memory leaks
   useEffect(() => {
@@ -396,8 +613,26 @@ export default function ChatPage() {
     }
   }
 
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+  function clearSelectedImage() {
+    setImageError(null)
+    revokePreviewUrl()
+    setPreviewUrl(null)
+    setSelectedFile(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  function resetChat() {
+    setCaseId(null)
+    setMessages([])
+    setInput('')
+    setChatError(null)
+    clearSelectedImage()
+  }
+
+  function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null
+    setChatError(null)
+
     if (file) {
       setImageError(getImageValidationError(file) ?? null)
       revokePreviewUrl()
@@ -405,28 +640,36 @@ export default function ChatPage() {
       previewUrlRef.current = newUrl
       setPreviewUrl(newUrl)
       setSelectedFile(file)
-    } else {
-      setImageError(null)
-      revokePreviewUrl()
-      setPreviewUrl(null)
-      setSelectedFile(null)
+      return
     }
+
+    clearSelectedImage()
+  }
+
+  async function createCase() {
+    const res = await fetch('/api/cases', { method: 'POST' })
+    const data = await res.json().catch(() => null)
+
+    if (!res.ok || !data?.caseId) {
+      throw new Error(
+        typeof data?.error === 'string' ? data.error : 'Failed to create case'
+      )
+    }
+
+    return data.caseId as string
   }
 
   async function startNewCase() {
     setLoading(true)
+    setChatError(null)
+
     try {
-      const res = await fetch('/api/cases', { method: 'POST' })
-      if (!res.ok) throw new Error('Failed to create case')
-      const data = await res.json()
-      setCaseId(data.caseId)
-      setMessages([
-        {
-          role: 'assistant',
-          content:
-            'Hi — tell me the truck year/make/model/engine and what symptoms you have. If you have fault codes (SPN/FMI), paste them. You can also upload a photo of your dashboard or scan tool screen.',
-        },
-      ])
+      const nextCaseId = await createCase()
+      setCaseId(nextCaseId)
+      setMessages([{ role: 'assistant', content: WELCOME_MESSAGE }])
+    } catch (e: unknown) {
+      const errMsg = e instanceof Error ? e.message : 'Unknown error'
+      setChatError(toFriendlyErrorMessage(errMsg))
     } finally {
       setLoading(false)
     }
@@ -434,44 +677,50 @@ export default function ChatPage() {
 
   async function send() {
     const text = input.trim()
-    if (!text || loading) return
+    const attachedFile = selectedFile
 
-    if (selectedFile) {
-      const fileError = getImageValidationError(selectedFile)
+    if ((!text && !attachedFile) || loading) return
+
+    if (attachedFile) {
+      const fileError = getImageValidationError(attachedFile)
       if (fileError) {
         setImageError(fileError)
         return
       }
     }
+
     setImageError(null)
+    setChatError(null)
 
     let cid = caseId
 
-    if (!cid) {
-      const res = await fetch('/api/cases', { method: 'POST' })
-      const data = await res.json()
-      cid = data.caseId
-      setCaseId(cid)
-    }
-
-    setInput('')
-    setMessages((m) => [...m, { role: 'user', content: text }])
-    setLoadingMessage(selectedFile ? 'Analyzing dashboard image…' : 'Thinking…')
-    setLoading(true)
-
-    if (!cid) {
-      setLoading(false)
-      return
-    }
-
-    const formData = new FormData()
-    formData.append('message', text)
-    formData.append('caseId', cid)
-    if (selectedFile) {
-      formData.append('image', selectedFile)
-    }
-
     try {
+      if (!cid) {
+        cid = await createCase()
+        setCaseId(cid)
+      }
+
+      setInput('')
+      setMessages((currentMessages) => [
+        ...currentMessages,
+        {
+          role: 'user',
+          content: text || 'Please analyze the attached dashboard image.',
+          attachmentName: attachedFile?.name,
+        },
+      ])
+      setLoadingMessage(attachedFile ? 'Analyzing dashboard image…' : 'Thinking…')
+      setLoading(true)
+
+      clearSelectedImage()
+
+      const formData = new FormData()
+      formData.append('message', text)
+      formData.append('caseId', cid)
+      if (attachedFile) {
+        formData.append('image', attachedFile)
+      }
+
       const res = await fetch('/api/chat', {
         method: 'POST',
         body: formData,
@@ -485,9 +734,12 @@ export default function ChatPage() {
       const knowledgeContext = hasKnowledgeContext(data) ? data.knowledgeContext : undefined
       const content =
         reply ||
-        (structured ? `${structured.most_likely_problem || 'Analysis complete.'}${structured.safety_message ? ` ${structured.safety_message}` : ''}`.trim() : '')
-      setMessages((m) => [
-        ...m,
+        (structured
+          ? `${structured.most_likely_problem || 'Analysis complete.'}${structured.safety_message ? ` ${structured.safety_message}` : ''}`.trim()
+          : '')
+
+      setMessages((currentMessages) => [
+        ...currentMessages,
         {
           role: 'assistant',
           content: content || 'Diagnostic analysis complete.',
@@ -498,8 +750,8 @@ export default function ChatPage() {
     } catch (e: unknown) {
       const errMsg = e instanceof Error ? e.message : 'Unknown error'
       const friendlyMsg = toFriendlyErrorMessage(errMsg)
-      setMessages((m) => [
-        ...m,
+      setMessages((currentMessages) => [
+        ...currentMessages,
         { role: 'assistant', content: friendlyMsg },
       ])
     } finally {
@@ -507,151 +759,483 @@ export default function ChatPage() {
     }
   }
 
+  function handleComposerKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      void send()
+    }
+  }
+
+  const canSend = !loading && (input.trim().length > 0 || Boolean(selectedFile))
+
   return (
-    <main className="min-h-screen p-4 md:p-8 max-w-3xl mx-auto">
-      <div className="flex items-center justify-between gap-3 mb-4">
-        <h1 className="text-2xl font-bold">TruckHelpNow — Diagnostic Chat</h1>
-        <button
-          onClick={() => {
-            setCaseId(null)
-            setMessages([])
-            setInput('')
-            setImageError(null)
-            revokePreviewUrl()
-            setPreviewUrl(null)
-            setSelectedFile(null)
-            if (fileInputRef.current) fileInputRef.current.value = ''
-          }}
-          className="text-sm px-3 py-2 rounded-lg border hover:bg-gray-50"
-        >
-          New chat
-        </button>
-      </div>
-
-      {!caseId && messages.length === 0 && (
-        <div className="border rounded-xl p-4 mb-4 bg-white">
-          <p className="text-gray-700">
-            Start a diagnostic session. Describe symptoms, paste codes (SPN/FMI), or upload a photo of your dashboard or scan tool. We’ll save the chat as a case.
-          </p>
-          <button
-            onClick={startNewCase}
-            disabled={loading}
-            className="mt-3 px-4 py-2 rounded-xl bg-black text-white font-semibold disabled:opacity-60"
-          >
-            {loading ? 'Starting…' : 'Start'}
-          </button>
-        </div>
-      )}
-
-      <div className="border rounded-xl p-4 bg-white min-h-[55vh]">
-        <div className="space-y-3">
-          {messages.map((m, idx) => (
-            <div
-              key={idx}
-              className={`p-3 rounded-xl ${
-                m.role === 'user' ? 'bg-gray-100' : 'bg-gray-50'
-              }`}
-            >
-              <div className="text-xs text-gray-500 mb-1">
-                {m.role === 'user' ? 'You' : 'TruckHelpNow'}
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.16),_transparent_28%),linear-gradient(180deg,_rgba(2,6,23,0.98)_0%,_rgba(2,6,23,1)_100%)]">
+      <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
+        <header className="rounded-[28px] border border-white/10 bg-slate-950/80 p-5 shadow-[0_24px_80px_rgba(2,6,23,0.45)] backdrop-blur-xl">
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-emerald-400/30 bg-emerald-400/10 text-sm font-semibold text-emerald-100 shadow-inner shadow-emerald-400/10">
+                TH
               </div>
-              {m.role === 'assistant' && m.structured ? (
-                <>
-                  <StructuredAnalysisBlock structured={m.structured} summary={m.content} />
-                  {m.knowledgeContext && (
-                    <KnowledgeContextBlock context={m.knowledgeContext} />
-                  )}
-                </>
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-semibold tracking-tight text-white">
+                    TruckHelpNow
+                  </p>
+                  <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[0.68rem] font-medium uppercase tracking-[0.18em] text-slate-300">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                    AI diagnostic workspace
+                  </span>
+                </div>
+                <div>
+                  <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+                    Professional truck diagnostics with clearer next steps.
+                  </h1>
+                  <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300 sm:text-base">
+                    Describe symptoms, paste SPN/FMI fault codes, or upload a dashboard
+                    photo to get structured, safety-first guidance that is easy to scan
+                    from the cab or the shop floor.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+              <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[0.68rem] font-medium uppercase tracking-[0.18em] text-slate-300">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                {caseId ? 'Case active' : 'Ready to start'}
+              </span>
+              <span className="inline-flex items-center rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-[0.68rem] font-medium uppercase tracking-[0.18em] text-emerald-100">
+                Image-aware
+              </span>
+              <button
+                type="button"
+                onClick={resetChat}
+                className="inline-flex items-center justify-center rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-slate-100 transition hover:border-white/20 hover:bg-white/10"
+              >
+                New chat
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <section className="overflow-hidden rounded-[30px] border border-white/10 bg-slate-950/80 shadow-[0_24px_80px_rgba(2,6,23,0.45)] backdrop-blur-xl">
+            <div className="border-b border-white/10 px-4 py-4 sm:px-6">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                    Diagnostic session
+                  </p>
+                  <p className="mt-1 text-sm text-slate-300">
+                    {messages.length > 0
+                      ? 'Messages are grouped for quick scan review, with structured evidence and safety guidance kept in-line.'
+                      : 'Start with a clear symptom summary, the truck details, or a dashboard photo.'}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2 text-[0.68rem] font-medium uppercase tracking-[0.18em] text-slate-400">
+                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
+                    Mobile ready
+                  </span>
+                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
+                    Structured guidance
+                  </span>
+                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
+                    Safety first
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4 px-4 py-5 sm:px-6 sm:py-6">
+              {chatError ? (
+                <div
+                  className="rounded-2xl border border-amber-400/20 bg-amber-400/10 p-4 text-sm text-amber-50"
+                  role="alert"
+                >
+                  {chatError}
+                </div>
+              ) : null}
+
+              {!caseId && messages.length === 0 ? (
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+                  <div className="rounded-[28px] border border-white/10 bg-gradient-to-br from-white/[0.05] to-white/[0.02] p-5 sm:p-6">
+                    <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-[0.68rem] font-medium uppercase tracking-[0.18em] text-emerald-100">
+                      Start a case
+                    </div>
+                    <h2 className="mt-4 text-2xl font-semibold tracking-tight text-white">
+                      Built for practical roadside troubleshooting.
+                    </h2>
+                    <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
+                      Capture the truck details, what changed, and any fault codes or
+                      dash warnings. The assistant will turn that into likely systems,
+                      low-risk checks, and safety-minded next steps.
+                    </p>
+
+                    <div className="mt-6 grid gap-3 md:grid-cols-3">
+                      <div className="rounded-2xl border border-white/10 bg-slate-950/55 p-4">
+                        <p className="text-sm font-semibold text-white">Symptoms</p>
+                        <p className="mt-2 text-sm leading-6 text-slate-300">
+                          Describe when the issue shows up: startup, idle, under load,
+                          regen, or highway speed.
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border border-white/10 bg-slate-950/55 p-4">
+                        <p className="text-sm font-semibold text-white">Codes</p>
+                        <p className="mt-2 text-sm leading-6 text-slate-300">
+                          Paste SPN/FMI or OEM fault codes so the assistant can anchor the
+                          diagnosis faster.
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border border-white/10 bg-slate-950/55 p-4">
+                        <p className="text-sm font-semibold text-white">Photos</p>
+                        <p className="mt-2 text-sm leading-6 text-slate-300">
+                          Upload a dashboard or scanner image if warning lights or code
+                          details are easier to show than type.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-6">
+                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                        Suggested prompts
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {SUGGESTED_PROMPTS.map((prompt) => (
+                          <button
+                            key={prompt}
+                            type="button"
+                            onClick={() => {
+                              setInput(prompt)
+                              setChatError(null)
+                              textareaRef.current?.focus()
+                            }}
+                            className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-left text-sm text-slate-100 transition hover:border-white/20 hover:bg-white/10"
+                          >
+                            {prompt}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+                      <button
+                        type="button"
+                        onClick={() => void startNewCase()}
+                        disabled={loading}
+                        className="inline-flex items-center justify-center rounded-full bg-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-500/25 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {loading ? 'Starting…' : 'Start diagnostic session'}
+                      </button>
+                      <p className="text-sm text-slate-400">
+                        Or type below and your first message will create the case
+                        automatically.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-[28px] border border-white/10 bg-slate-950/55 p-5">
+                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                      What you will get
+                    </p>
+                    <div className="mt-4 space-y-3">
+                      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                        <p className="text-sm font-semibold text-white">Likely system area</p>
+                        <p className="mt-2 text-sm leading-6 text-slate-300">
+                          A clear read on what subsystem the symptoms point toward first.
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                        <p className="text-sm font-semibold text-white">Immediate checks</p>
+                        <p className="mt-2 text-sm leading-6 text-slate-300">
+                          Low-risk inspection steps drivers or dispatch can use right away.
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                        <p className="text-sm font-semibold text-white">Safety guidance</p>
+                        <p className="mt-2 text-sm leading-6 text-slate-300">
+                          Stronger stop-driving guidance when the symptoms suggest higher risk.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               ) : (
-                <div className="whitespace-pre-wrap text-gray-900">
-                  {m.content}
+                <div className="space-y-4">
+                  {messages.map((message, idx) => {
+                    const isUser = message.role === 'user'
+
+                    return (
+                      <article
+                        key={idx}
+                        className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
+                      >
+                        <div
+                          className={`w-full rounded-[28px] border p-4 sm:p-5 ${
+                            isUser
+                              ? 'max-w-2xl border-emerald-400/20 bg-emerald-400/10'
+                              : 'max-w-4xl border-white/10 bg-white/[0.04]'
+                          }`}
+                        >
+                          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                            <div className="flex items-start gap-3">
+                              <div
+                                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl text-xs font-semibold ${
+                                  isUser
+                                    ? 'bg-emerald-300 text-slate-950'
+                                    : 'border border-white/10 bg-white/5 text-slate-100'
+                                }`}
+                              >
+                                {isUser ? 'You' : 'TH'}
+                              </div>
+                              <div>
+                                <p className="text-sm font-semibold text-white">
+                                  {isUser ? 'Driver input' : 'TruckHelpNow'}
+                                </p>
+                                <p className="mt-1 text-[0.68rem] font-medium uppercase tracking-[0.2em] text-slate-500">
+                                  {isUser
+                                    ? 'Submitted context'
+                                    : message.structured
+                                      ? 'Structured diagnostic analysis'
+                                      : 'Assistant guidance'}
+                                </p>
+                              </div>
+                            </div>
+
+                            {!isUser && message.structured ? (
+                              <div className="flex flex-wrap gap-2">
+                                <MetaBadge
+                                  label="Safety"
+                                  value={message.structured.safety_level}
+                                  className={getSafetyClasses(message.structured.safety_level).badge}
+                                />
+                                <MetaBadge
+                                  label="Confidence"
+                                  value={message.structured.overall_confidence}
+                                  className={getConfidenceClasses(message.structured.overall_confidence)}
+                                />
+                              </div>
+                            ) : null}
+                          </div>
+
+                          {message.role === 'assistant' && message.structured ? (
+                            <div className="space-y-4">
+                              <StructuredAnalysisBlock
+                                structured={message.structured}
+                                summary={message.content}
+                              />
+                              {message.knowledgeContext ? (
+                                <KnowledgeContextBlock context={message.knowledgeContext} />
+                              ) : null}
+                            </div>
+                          ) : (
+                            <div className="space-y-3">
+                              <div className="whitespace-pre-wrap text-sm leading-7 text-slate-100">
+                                {message.content}
+                              </div>
+                              {message.attachmentName ? (
+                                <div className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
+                                  Image attached: {message.attachmentName}
+                                </div>
+                              ) : null}
+                            </div>
+                          )}
+                        </div>
+                      </article>
+                    )
+                  })}
+
+                  {loading ? (
+                    <div className="flex justify-start">
+                      <div className="w-full max-w-3xl rounded-[28px] border border-white/10 bg-white/[0.04] p-4 sm:p-5">
+                        <div className="mb-3 flex items-center gap-3">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-xs font-semibold text-slate-100">
+                            TH
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-white">TruckHelpNow</p>
+                            <p className="mt-1 text-[0.68rem] font-medium uppercase tracking-[0.2em] text-slate-500">
+                              Working
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 text-sm text-slate-300">
+                          <div className="flex gap-1">
+                            <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
+                            <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400 [animation-delay:120ms]" />
+                            <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400 [animation-delay:240ms]" />
+                          </div>
+                          <span>{loadingMessage}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div ref={bottomRef} />
                 </div>
               )}
             </div>
-          ))}
 
-          {loading && (
-            <div className="p-3 rounded-xl bg-gray-50 text-gray-600">
-              {loadingMessage}
+            <div className="border-t border-white/10 bg-slate-950/85 px-4 py-4 sm:px-6 sm:py-5">
+              <div className="rounded-[28px] border border-white/10 bg-white/[0.04] p-3 shadow-[0_18px_40px_rgba(2,6,23,0.3)]">
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center justify-between gap-3 px-1">
+                    <div>
+                      <p className="text-sm font-semibold text-white">Describe the problem</p>
+                      <p className="mt-1 text-xs text-slate-400">
+                        Include truck details, symptoms, codes, or upload a dash/scanner image.
+                      </p>
+                    </div>
+                    <label
+                      htmlFor="chat-image-input"
+                      className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-slate-100 transition hover:border-white/20 hover:bg-white/10"
+                    >
+                      <span className="text-base leading-none">+</span>
+                      Attach image
+                    </label>
+                  </div>
+
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/png, image/jpeg, image/jpg, image/webp"
+                    onChange={handleFileChange}
+                    className="hidden"
+                    id="chat-image-input"
+                    aria-label="Select image for upload"
+                  />
+
+                  <div className="rounded-[24px] border border-white/10 bg-slate-950/70 p-2">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+                      <textarea
+                        ref={textareaRef}
+                        value={input}
+                        onChange={(e) => {
+                          setInput(e.target.value)
+                          setChatError(null)
+                        }}
+                        onKeyDown={handleComposerKeyDown}
+                        placeholder="Ex: 2019 Cascadia DD15. Low power uphill, check engine light, SPN 4364 FMI 18. Any safe checks before I drive farther?"
+                        rows={1}
+                        className="min-h-[88px] w-full resize-none bg-transparent px-3 py-3 text-sm leading-6 text-slate-100 outline-none placeholder:text-slate-500"
+                      />
+
+                      <div className="flex items-center gap-2 px-1 pb-1 lg:pb-2">
+                        <button
+                          type="button"
+                          onClick={() => void send()}
+                          disabled={!canSend}
+                          className="inline-flex h-12 items-center justify-center rounded-2xl bg-emerald-400 px-5 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-500/20 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Send
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex flex-col gap-3 border-t border-white/10 px-3 pt-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex flex-wrap gap-2">
+                        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[0.68rem] font-medium uppercase tracking-[0.18em] text-slate-400">
+                          Enter to send
+                        </span>
+                        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[0.68rem] font-medium uppercase tracking-[0.18em] text-slate-400">
+                          Shift + Enter for a new line
+                        </span>
+                        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[0.68rem] font-medium uppercase tracking-[0.18em] text-slate-400">
+                          PNG, JPG, WebP up to 8 MB
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500">
+                        Safety-critical issues should still be confirmed with a qualified technician.
+                      </p>
+                    </div>
+                  </div>
+
+                  {previewUrl ? (
+                    <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-white/10 bg-slate-950/60 p-3">
+                      <Image
+                        src={previewUrl}
+                        alt="Preview of selected upload"
+                        width={64}
+                        height={64}
+                        unoptimized
+                        className="h-16 w-16 rounded-2xl border border-white/10 object-cover"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-white">
+                          {selectedFile?.name ?? 'Selected image'}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-400">
+                          Keep warning lights and fault codes fully visible for better results.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={clearSelectedImage}
+                        className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-slate-100 transition hover:border-white/20 hover:bg-white/10"
+                        aria-label="Remove selected image"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {imageError ? (
+                    <p className="text-xs text-red-300" role="alert">
+                      {imageError}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
             </div>
-          )}
+          </section>
 
-          <div ref={bottomRef} />
+          <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start">
+            <div className="rounded-[28px] border border-white/10 bg-slate-950/80 p-5 shadow-[0_24px_80px_rgba(2,6,23,0.45)] backdrop-blur-xl">
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                Best results
+              </p>
+              <h2 className="mt-3 text-lg font-semibold text-white">
+                Share the details that change the diagnosis.
+              </h2>
+              <ul className="mt-4 space-y-3">
+                {CHECKLIST_ITEMS.map((item) => (
+                  <li key={item} className="flex gap-3 text-sm leading-6 text-slate-300">
+                    <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-emerald-400" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="rounded-[28px] border border-white/10 bg-slate-950/80 p-5 shadow-[0_24px_80px_rgba(2,6,23,0.45)] backdrop-blur-xl">
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                Safety reminders
+              </p>
+              <div className="mt-4 space-y-3">
+                {SAFETY_ITEMS.map((item) => (
+                  <div
+                    key={item}
+                    className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm leading-6 text-slate-300"
+                  >
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-[28px] border border-emerald-400/15 bg-emerald-400/10 p-5 shadow-[0_24px_80px_rgba(2,6,23,0.45)] backdrop-blur-xl">
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-emerald-100/80">
+                Guidance scope
+              </p>
+              <p className="mt-3 text-sm leading-6 text-emerald-50">
+                TruckHelpNow is designed to prioritize low-risk checks first and flag
+                higher-risk conditions clearly. It does not replace certified diagnostics
+                or OEM service procedures.
+              </p>
+            </div>
+          </aside>
         </div>
       </div>
-
-      <div className="mt-4 flex gap-2">
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') send()
-          }}
-          placeholder="Describe symptoms, paste codes, or add a dashboard/scanner photo…"
-          className="flex-1 border rounded-xl px-4 py-3"
-        />
-        <button
-          onClick={send}
-          disabled={loading || input.trim().length === 0}
-          className="px-5 py-3 rounded-xl bg-black text-white font-semibold disabled:opacity-60"
-        >
-          Send
-        </button>
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/png, image/jpeg, image/jpg, image/webp"
-          onChange={handleFileChange}
-          className="hidden"
-          id="chat-image-input"
-          aria-label="Select image for upload"
-        />
-        <label
-          htmlFor="chat-image-input"
-          className="text-sm px-3 py-2 rounded-xl border border-gray-300 hover:bg-gray-50 cursor-pointer"
-        >
-          Choose image
-        </label>
-        {previewUrl && (
-          <>
-            <img
-              src={previewUrl}
-              alt="Preview of selected upload"
-              className="h-14 w-14 object-cover rounded-xl border border-gray-200"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                setImageError(null)
-                revokePreviewUrl()
-                setPreviewUrl(null)
-                setSelectedFile(null)
-                if (fileInputRef.current) fileInputRef.current.value = ''
-              }}
-              className="text-xs px-2 py-1.5 rounded-lg border border-gray-300 hover:bg-gray-50"
-              aria-label="Remove selected image"
-            >
-              Remove
-            </button>
-          </>
-        )}
-        {imageError && (
-          <p className="text-xs text-red-600 w-full mt-1" role="alert">
-            {imageError}
-          </p>
-        )}
-        <p className="text-xs text-gray-500 w-full mt-2">
-          Upload a dashboard photo or scanner screenshot. Keep fault codes and warning lights clearly visible; avoid glare and blur.
-        </p>
-      </div>
-
-      <p className="text-xs text-gray-500 mt-3">
-        Informational guidance only. If brakes/steering/overheating/fuel
-        leak/fire risk: stop and seek professional help.
-      </p>
     </main>
   )
 }

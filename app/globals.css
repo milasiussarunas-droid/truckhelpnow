@@ -3,6 +3,7 @@
 :root {
   --background: #020617;
   --foreground: #e5e7eb;
+  color-scheme: dark;
 }
 
 @theme inline {
@@ -20,8 +21,35 @@
 }
 
 body {
-  background: var(--background);
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top, rgba(16, 185, 129, 0.14), transparent 26%),
+    linear-gradient(180deg, #020617 0%, #020617 48%, #000000 100%);
   color: var(--foreground);
   font-family: var(--font-geist-sans), system-ui, -apple-system, BlinkMacSystemFont,
     "SF Pro Text", "SF Pro Display", "Segoe UI", sans-serif;
+}
+
+::selection {
+  background: rgba(52, 211, 153, 0.35);
+  color: #f8fafc;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.65);
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  border: 2px solid rgba(15, 23, 42, 0.65);
+  background: rgba(100, 116, 139, 0.65);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.8);
 }
