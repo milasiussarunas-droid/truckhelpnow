@@ -969,7 +969,7 @@ export default function ChatPage() {
                       low-risk checks, and safety-minded next steps.
                     </p>
 
-                    <div className="mt-6 grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+                    <div className="mt-6 space-y-3">
                       <div className="rounded-2xl border border-white/10 bg-slate-950/55 p-4">
                         <p className="text-sm font-semibold text-white">Symptoms</p>
                         <p className="mt-2 text-sm leading-6 text-slate-300">
