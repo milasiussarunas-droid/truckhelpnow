@@ -1,15 +1,22 @@
-import type { Metadata } from "next";
+import { buildMetadata } from '@/lib/seo'
 
-export const metadata: Metadata = {
-  title: "Diagnostic chat",
+export const metadata = buildMetadata({
+  title: 'Truck Diagnostic Chat for SPN/FMI Codes and Warning Lights',
   description:
-    "Start a truck diagnostic session. Describe symptoms, paste fault codes (SPN/FMI), or upload dashboard or scan tool photos. Get structured next steps and suggested checks.",
-};
+    'Start a TruckHelpNow diagnostic session to describe symptoms, paste SPN/FMI fault codes, or upload dashboard photos for structured, safety-first truck troubleshooting guidance.',
+  path: '/chat',
+  keywords: [
+    'truck diagnostic chat',
+    'SPN FMI assistant',
+    'semi truck fault code tool',
+    'truck warning light analysis',
+  ],
+})
 
 export default function ChatLayout({
   children,
 }: {
-  children: React.ReactNode;
+  children: React.ReactNode
 }) {
-  return <>{children}</>;
+  return <>{children}</>
 }

@@ -1,13 +1,16 @@
-import type { MetadataRoute } from "next";
-
-const baseUrl = "https://truckhelpnow.com";
+import type { MetadataRoute } from 'next'
+import { siteConfig } from '@/lib/seo'
 
 export default function robots(): MetadataRoute.Robots {
   return {
-    rules: {
-      userAgent: "*",
-      allow: "/",
-    },
-    sitemap: `${baseUrl}/sitemap.xml`,
-  };
+    rules: [
+      {
+        userAgent: '*',
+        allow: '/',
+        disallow: ['/api/'],
+      },
+    ],
+    host: siteConfig.url,
+    sitemap: `${siteConfig.url}/sitemap.xml`,
+  }
 }
